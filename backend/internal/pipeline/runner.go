@@ -36,6 +36,7 @@ type Edge struct {
 
 // RunPayload pipeline.run 任务负载
 type RunPayload struct {
+	RunID      int64          `json:"run_id"` // P0 #4: 预先 service 层创建,worker 不再造新行
 	PipelineID int64          `json:"pipeline_id"`
 	Input      map[string]any `json:"input"`
 	Overrides  map[string]any `json:"overrides"`

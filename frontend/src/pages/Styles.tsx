@@ -3,6 +3,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Empty,
   Form,
   Image,
   Input,
@@ -12,6 +13,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Upload,
 } from 'antd';
 import {
@@ -174,9 +176,11 @@ export default function StylesPage() {
             options={projects.map((p) => ({ label: p.name, value: p.id }))}
             onChange={(v) => setProjectId(v)}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建风格
-          </Button>
+          <Tooltip title="创建新的风格预设(可绑定到项目或全局)">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建风格
+            </Button>
+          </Tooltip>
         </Space>
       }
     >
@@ -186,6 +190,15 @@ export default function StylesPage() {
         loading={loading}
         dataSource={list}
         pagination={false}
+        locale={{
+          emptyText: (
+            <Empty description="还没有风格预设">
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新建风格
+              </Button>
+            </Empty>
+          ),
+        }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 80 },
           { title: '名称', dataIndex: 'name' },
@@ -239,13 +252,17 @@ export default function StylesPage() {
             width: 160,
             render: (_: unknown, r: Style) => (
               <Space size={4}>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-                  编辑
-                </Button>
-                <Popconfirm title="确认删除该风格?" onConfirm={() => onDelete(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>
-                    删除
+                <Tooltip title="编辑该风格的画风/色调/灯光/参考图">
+                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
+                    编辑
                   </Button>
+                </Tooltip>
+                <Popconfirm title="确认删除该风格?" onConfirm={() => onDelete(r.id)}>
+                  <Tooltip title="删除该风格(不可恢复)">
+                    <Button size="small" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Tooltip>
                 </Popconfirm>
               </Space>
             ),

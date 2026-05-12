@@ -37,7 +37,19 @@ func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 }
 
 func (r *UserRepo) Update(ctx context.Context, u *model.User) error {
-	return r.db.WithContext(ctx).Save(u).Error
+	// 修复 P0 #7 — 原 Save(u) 会把 password_hash / last_login_at 等独立通道
+	// 维护的字段一起写回。改 Updates(map) 只动用户 profile 字段;敏感字段
+	// 由 UpdatePassword / UpdateLastLogin 独立 SQL 维护,避免并发覆盖。
+	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", u.ID).
+		Updates(map[string]any{
+			"username":   u.Username,
+			"nickname":   u.Nickname,
+			"email":      u.Email,
+			"phone":      u.Phone,
+			"avatar_url": u.AvatarURL,
+			"dept_id":    u.DeptID,
+			"status":     u.Status,
+		}).Error
 }
 
 func (r *UserRepo) UpdatePassword(ctx context.Context, id int64, hash string) error {

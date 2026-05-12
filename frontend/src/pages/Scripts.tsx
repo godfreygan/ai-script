@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Drawer,
+  Empty,
   Form,
   Input,
   InputNumber,
@@ -249,9 +250,11 @@ export default function ScriptsPage() {
               setPage(1);
             }}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-            新建剧本
-          </Button>
+          <Tooltip title="上传新的剧本原文">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              新建剧本
+            </Button>
+          </Tooltip>
         </Space>
       }
     >
@@ -259,6 +262,15 @@ export default function ScriptsPage() {
         rowKey="id"
         loading={loading}
         dataSource={list}
+        locale={{
+          emptyText: (
+            <Empty description="还没有剧本">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+                立即上传剧本
+              </Button>
+            </Empty>
+          ),
+        }}
         pagination={{
           current: page,
           pageSize,
@@ -304,9 +316,11 @@ export default function ScriptsPage() {
             width: 320,
             render: (_: unknown, r: Script) => (
               <Space size={4} wrap>
-                <Button size="small" icon={<EyeOutlined />} onClick={() => openEpisodes(r)}>
-                  分集
-                </Button>
+                <Tooltip title="查看该剧本的分集列表">
+                  <Button size="small" icon={<EyeOutlined />} onClick={() => openEpisodes(r)}>
+                    分集
+                  </Button>
+                </Tooltip>
                 <Tooltip title="调用 LLM 把整本剧本拆解成若干集">
                   <Button
                     size="small"
@@ -318,9 +332,11 @@ export default function ScriptsPage() {
                   </Button>
                 </Tooltip>
                 <Popconfirm title="确认删除剧本及其分集?" onConfirm={() => onDelete(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>
-                    删除
-                  </Button>
+                  <Tooltip title="删除剧本及全部分集(不可恢复)">
+                    <Button size="small" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Tooltip>
                 </Popconfirm>
               </Space>
             ),
@@ -433,9 +449,11 @@ export default function ScriptsPage() {
         width={720}
         title={`分集: ${episodeTarget?.name ?? ''}`}
         extra={
-          <Button size="small" onClick={() => episodeTarget && openEpisodes(episodeTarget)}>
-            刷新
-          </Button>
+          <Tooltip title="重新拉取分集列表">
+            <Button size="small" onClick={() => episodeTarget && openEpisodes(episodeTarget)}>
+              刷新
+            </Button>
+          </Tooltip>
         }
       >
         <Table
@@ -458,13 +476,15 @@ export default function ScriptsPage() {
               key: 'op',
               width: 120,
               render: (_: unknown, ep: Episode) => (
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => navigate(`/prompts?episode_id=${ep.id}`)}
-                >
-                  生成提示词
-                </Button>
+                <Tooltip title="跳转到提示词页面,基于本集生成">
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => navigate(`/prompts?episode_id=${ep.id}`)}
+                  >
+                    生成提示词
+                  </Button>
+                </Tooltip>
               ),
             },
           ]}

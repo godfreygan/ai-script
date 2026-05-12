@@ -6,6 +6,7 @@ import (
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type BillingRepo struct{ db *gorm.DB }
@@ -36,7 +37,19 @@ func (r *BillingRepo) CreateQuota(ctx context.Context, q *model.BillingQuota) er
 }
 
 func (r *BillingRepo) UpdateQuota(ctx context.Context, q *model.BillingQuota) error {
-	return r.db.WithContext(ctx).Save(q).Error
+	// 修复 P0 #7 — 原 Save(q) 把零值字段也写回(并发 patch 会丢更新)。改用 Updates(map)
+	// 只写显式字段。used_value 用 IncUsed 独立通道,这里不动。
+	return r.db.WithContext(ctx).Model(&model.BillingQuota{}).Where("id = ?", q.ID).
+		Updates(map[string]any{
+			"scope_type":  q.ScopeType,
+			"scope_id":    q.ScopeID,
+			"model_id":    q.ModelID,
+			"period":      q.Period,
+			"metric":      q.Metric,
+			"quota_value": q.QuotaValue,
+			"reset_at":    q.ResetAt,
+			"enabled":     q.Enabled,
+		}).Error
 }
 
 func (r *BillingRepo) DeleteQuota(ctx context.Context, id int64) error {
@@ -79,22 +92,35 @@ func (r *BillingRepo) IncUsed(ctx context.Context, id int64, delta float64) erro
 }
 
 // UpsertDaily 写入或累加日聚合
+//
+// 修复 P0 #5 — 原实现是 Transaction(First→Updates|Create),两步操作在并发下:
+//   - T1 First 返回 not found, T1 还没 Create
+//   - T2 First 也返回 not found, T2 Create 成功
+//   - T1 再次 Create → 主键/唯一冲突 → 整个事务回滚 → 当天的 calls/cost 数据被吞掉
+//
+// 改用 INSERT ... ON DUPLICATE KEY UPDATE(MySQL 原生原子语义),
+// DB 行锁 + (stat_date,model_id,dept_id,user_id) 唯一索引兜底,
+// 让 MySQL 做加法,Go 这边不再有 race window。
+//
+// 唯一索引在 model.BillingDaily 已用 gorm:"uniqueIndex:uniq_daily_dim,priority:N" 声明,
+// AutoMigrate 启动时自动创建,无需手工 SQL。
 func (r *BillingRepo) UpsertDaily(ctx context.Context, d *model.BillingDaily) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var exist model.BillingDaily
-		err := tx.Where("stat_date = ? AND model_id = ? AND dept_id = ? AND user_id = ?",
-			d.StatDate, d.ModelID, d.DeptID, d.UserID).First(&exist).Error
-		if err == nil {
-			return tx.Model(&exist).Updates(map[string]any{
-				"calls":         exist.Calls + d.Calls,
-				"input_tokens":  exist.InputTokens + d.InputTokens,
-				"output_tokens": exist.OutputTokens + d.OutputTokens,
-				"units":         exist.Units + d.Units,
-				"cost":          exist.Cost + d.Cost,
-			}).Error
-		}
-		return tx.Create(d).Error
-	})
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "stat_date"},
+			{Name: "model_id"},
+			{Name: "dept_id"},
+			{Name: "user_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]any{
+			"calls":         gorm.Expr("calls + ?", d.Calls),
+			"input_tokens":  gorm.Expr("input_tokens + ?", d.InputTokens),
+			"output_tokens": gorm.Expr("output_tokens + ?", d.OutputTokens),
+			"units":         gorm.Expr("units + ?", d.Units),
+			"cost":          gorm.Expr("cost + ?", d.Cost),
+			"updated_at":    time.Now(),
+		}),
+	}).Create(d).Error
 }
 
 func (r *BillingRepo) ListDaily(ctx context.Context, from, to time.Time, userID, deptID, modelID int64) ([]model.BillingDaily, error) {

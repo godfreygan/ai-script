@@ -17,6 +17,7 @@ import {
   Select,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { DeleteOutlined, PictureOutlined, ThunderboltOutlined } from '@ant-design/icons';
@@ -166,6 +167,16 @@ export default function ImagesPage() {
     }
   };
 
+  const openGen = () => {
+    genForm.resetFields();
+    genForm.setFieldsValue({
+      project_id: projectId,
+      storyboard_id: storyboardId,
+    });
+    setGenTopic(null);
+    setGenOpen(true);
+  };
+
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
       <Card>
@@ -190,21 +201,15 @@ export default function ImagesPage() {
               setPage(1);
             }}
           />
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            onClick={() => {
-              genForm.resetFields();
-              genForm.setFieldsValue({
-                project_id: projectId,
-                storyboard_id: storyboardId,
-              });
-              setGenTopic(null);
-              setGenOpen(true);
-            }}
-          >
-            生成图片
-          </Button>
+          <Tooltip title="基于提示词调用图像模型批量生成图片(可选关联分镜/项目/风格)">
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={openGen}
+            >
+              生成图片
+            </Button>
+          </Tooltip>
         </Space>
       </Card>
 
@@ -220,7 +225,11 @@ export default function ImagesPage() {
         loading={loading}
       >
         {list.length === 0 ? (
-          <Empty description="暂无图片,点击右上角生成" />
+          <Empty description="暂无图片">
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={openGen}>
+              生成图片
+            </Button>
+          </Empty>
         ) : (
           <>
             <Row gutter={[12, 12]}>
@@ -256,7 +265,9 @@ export default function ImagesPage() {
                         title="确认删除?"
                         onConfirm={() => onDelete(img.id)}
                       >
-                        <DeleteOutlined />
+                        <Tooltip title="删除该图片(不可恢复)">
+                          <DeleteOutlined />
+                        </Tooltip>
                       </Popconfirm>,
                     ]}
                   >

@@ -277,19 +277,16 @@ func (s *ReviewService) Act(ctx context.Context, recordID int64, in *ActInput, u
 	}
 
 	if len(fields) > 0 {
-		// 并发保护(尽力 CAS):写入前重新拉取记录,确认 current_step/status 未被
-		// 其他 reviewer 抢先推进。受 repo 当前接口限制,无法做行锁/版本号原子
-		// 更新;此处缩小窗口,降低双推进概率。后续可在 repo 层加 SELECT...FOR
-		// UPDATE 或 version 字段做强一致。
-		fresh, ferr := s.r.Review.GetRecord(ctx, recordID)
-		if ferr != nil {
-			return nil, errcode.ErrInternal.Wrap(ferr)
+		// 修复 P0 #6 — 真 CAS:让 MySQL 通过 WHERE id=? AND status=? AND current_step=?
+		// 单条 SQL 完成读+写,RowsAffected=0 即视为并发冲突。
+		// 原假 CAS(GetRecord→比较→UpdateRecord)在两步之间仍有窗口,双 reviewer
+		// 同时 approve 会双写;真 CAS 由 DB 行锁兜底,彻底消除该窗口。
+		ok, cerr := s.r.Review.UpdateRecordCAS(ctx, recordID, "pending", rec.CurrentStep, fields)
+		if cerr != nil {
+			return nil, errcode.ErrInternal.Wrap(cerr)
 		}
-		if fresh.Status != "pending" || fresh.CurrentStep != rec.CurrentStep {
+		if !ok {
 			return nil, errcode.ErrConflict.WithMsg("审核状态已变更,请刷新后重试")
-		}
-		if err := s.r.Review.UpdateRecord(ctx, recordID, fields); err != nil {
-			return nil, errcode.ErrInternal.Wrap(err)
 		}
 	}
 
@@ -313,8 +310,15 @@ func (s *ReviewService) Cancel(ctx context.Context, recordID int64, uid int64) e
 		"status":      "cancelled",
 		"finished_at": now,
 	}
-	if err := s.r.Review.UpdateRecord(ctx, recordID, fields); err != nil {
-		return errcode.ErrInternal.Wrap(err)
+	// 修复 P0 #6 — Cancel 与并发 Act 之间也存在 race:Act 可能已抢先
+	// approve/reject(status 改变),旧 rec 仍为 pending,撤回会覆盖已结审。
+	// 用 CAS 让 DB 兜底:WHERE status=? AND current_step=?,RowsAffected=0 即冲突。
+	ok, cerr := s.r.Review.UpdateRecordCAS(ctx, recordID, "pending", rec.CurrentStep, fields)
+	if cerr != nil {
+		return errcode.ErrInternal.Wrap(cerr)
+	}
+	if !ok {
+		return errcode.ErrConflict.WithMsg("审核状态已变更,无法撤回")
 	}
 	return nil
 }

@@ -358,10 +358,10 @@ func (BillingQuota) TableName() string { return "billing_quotas" }
 
 type BillingDaily struct {
 	ID           int64     `gorm:"primaryKey" json:"id"`
-	StatDate     time.Time `gorm:"type:date" json:"stat_date"`
-	ModelID      int64     `json:"model_id"`
-	DeptID       int64     `json:"dept_id"`
-	UserID       int64     `json:"user_id"`
+	StatDate     time.Time `gorm:"type:date;uniqueIndex:uniq_daily_dim,priority:1" json:"stat_date"`
+	ModelID      int64     `gorm:"uniqueIndex:uniq_daily_dim,priority:2" json:"model_id"`
+	DeptID       int64     `gorm:"uniqueIndex:uniq_daily_dim,priority:3" json:"dept_id"`
+	UserID       int64     `gorm:"uniqueIndex:uniq_daily_dim,priority:4" json:"user_id"`
 	Calls        int       `json:"calls"`
 	InputTokens  int64     `json:"input_tokens"`
 	OutputTokens int64     `json:"output_tokens"`

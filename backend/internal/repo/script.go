@@ -52,7 +52,18 @@ func (r *ScriptRepo) Create(ctx context.Context, s *model.Script) error {
 }
 
 func (r *ScriptRepo) Update(ctx context.Context, s *model.Script) error {
-	return r.db.WithContext(ctx).Save(s).Error
+	// 修复 P0 #7 — 原 Save(s) 把全部字段(含 raw_text)写回。parser 异步
+	// 写 raw_text+meta 同时,前端可能改 name → Save 互相覆盖。改 Updates(map)
+	// 只写显式字段,current_version 用专门的 AddVersion 通道,这里不动。
+	return r.db.WithContext(ctx).Model(&model.Script{}).Where("id = ?", s.ID).
+		Updates(map[string]any{
+			"project_id": s.ProjectID,
+			"name":       s.Name,
+			"source_url": s.SourceURL,
+			"raw_text":   s.RawText,
+			"status":     s.Status,
+			"meta":       s.Meta,
+		}).Error
 }
 
 func (r *ScriptRepo) UpdateStatus(ctx context.Context, id int64, status int8) error {

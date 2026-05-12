@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Drawer,
+  Empty,
   Form,
   InputNumber,
   Select,
@@ -198,6 +199,11 @@ export default function AuditLogsPage() {
           size="small"
           loading={loading}
           dataSource={list}
+          locale={{
+            emptyText: (
+              <Empty description="暂无审计记录,可调整左上方筛选条件" />
+            ),
+          }}
           onRow={(record) => ({
             onClick: () => openDetail(record),
             style: { cursor: 'pointer' },
@@ -254,15 +260,17 @@ export default function AuditLogsPage() {
                     <Typography.Text style={{ maxWidth: 140 }} ellipsis={{ tooltip: v }}>
                       {v}
                     </Typography.Text>
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<CopyOutlined />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copyText(v);
-                      }}
-                    />
+                    <Tooltip title="复制 Request ID">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<CopyOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyText(v);
+                        }}
+                      />
+                    </Tooltip>
                   </Space>
                 ) : (
                   '-'

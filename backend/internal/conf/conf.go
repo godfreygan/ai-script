@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -80,7 +81,35 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, err
 	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
 	return &c, nil
+}
+
+// Validate 关键配置 fail-fast — 防止默认 secret / 空 key 进入生产。
+// 修复 P0 #3 — 原 Load 无校验, .env 漏配 / 沿用 please-change-me 也能起服务。
+func (c *Config) Validate() error {
+	if c.JWT.Secret == "" {
+		return fmt.Errorf("conf: jwt.secret is empty — set JWT_SECRET")
+	}
+	if strings.Contains(c.JWT.Secret, "change-me") {
+		return fmt.Errorf("conf: jwt.secret still uses default 'change-me' placeholder — set JWT_SECRET to a real random string >=32 chars")
+	}
+	if c.App.Env == "prod" && len(c.JWT.Secret) < 32 {
+		return fmt.Errorf("conf: jwt.secret too short (%d) in prod, require >=32 chars", len(c.JWT.Secret))
+	}
+	if c.Crypto.Key == "" {
+		return fmt.Errorf("conf: crypto.key is empty — set CRYPTO_KEY (16/24/32 bytes for AES)")
+	}
+	keyLen := len(c.Crypto.Key)
+	if keyLen != 16 && keyLen != 24 && keyLen != 32 {
+		return fmt.Errorf("conf: crypto.key length=%d invalid for AES (must be 16/24/32 bytes)", keyLen)
+	}
+	if c.MySQL.DSN == "" {
+		return fmt.Errorf("conf: mysql.dsn is empty — set MYSQL_DSN")
+	}
+	return nil
 }
 
 // expandEnv 把 ${VAR:default} 展开

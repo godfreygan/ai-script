@@ -3,6 +3,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Empty,
   Form,
   Input,
   InputNumber,
@@ -259,18 +260,20 @@ export default function StoryboardsPage() {
             onChange={(v) => setEpisodeId(v)}
             disabled={!scriptId}
           />
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            disabled={!episodeId}
-            onClick={() => {
-              genForm.resetFields();
-              setGenTopic(null);
-              setGenOpen(true);
-            }}
-          >
-            AI 生成分镜
-          </Button>
+          <Tooltip title={episodeId ? '基于该分集当前提示词的 shots[] 段调用大模型批量生成分镜' : '请先选择剧本与分集'}>
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              disabled={!episodeId}
+              onClick={() => {
+                genForm.resetFields();
+                setGenTopic(null);
+                setGenOpen(true);
+              }}
+            >
+              AI 生成分镜
+            </Button>
+          </Tooltip>
           {selectedScript && (
             <Typography.Text type="secondary">
               项目: {selectedScript.project_id ? `#${selectedScript.project_id}` : '-'}
@@ -296,6 +299,25 @@ export default function StoryboardsPage() {
           dataSource={list}
           pagination={false}
           scroll={{ x: 1400 }}
+          locale={{
+            emptyText: episodeId ? (
+              <Empty description="该分集暂无分镜">
+                <Button
+                  type="primary"
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => {
+                    genForm.resetFields();
+                    setGenTopic(null);
+                    setGenOpen(true);
+                  }}
+                >
+                  AI 生成分镜
+                </Button>
+              </Empty>
+            ) : (
+              '请先在上方选择剧本与分集'
+            ),
+          }}
           columns={[
             { title: '#', dataIndex: 'shot_no', width: 56 },
             {
@@ -354,20 +376,26 @@ export default function StoryboardsPage() {
               width: 220,
               render: (_: unknown, r: Storyboard) => (
                 <Space size={4} wrap>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-                    编辑
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<BgColorsOutlined />}
-                    onClick={() => openStyle(r)}
-                  >
-                    应用风格
-                  </Button>
-                  <Popconfirm title="确认删除该分镜?" onConfirm={() => onDelete(r.id)}>
-                    <Button size="small" danger icon={<DeleteOutlined />}>
-                      删除
+                  <Tooltip title="编辑该分镜的镜头/描述/台词">
+                    <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
+                      编辑
                     </Button>
+                  </Tooltip>
+                  <Tooltip title="为此分镜叠加风格关键词到 image_prompt">
+                    <Button
+                      size="small"
+                      icon={<BgColorsOutlined />}
+                      onClick={() => openStyle(r)}
+                    >
+                      应用风格
+                    </Button>
+                  </Tooltip>
+                  <Popconfirm title="确认删除该分镜?" onConfirm={() => onDelete(r.id)}>
+                    <Tooltip title="删除该分镜(不可恢复)">
+                      <Button size="small" danger icon={<DeleteOutlined />}>
+                        删除
+                      </Button>
+                    </Tooltip>
                   </Popconfirm>
                 </Space>
               ),

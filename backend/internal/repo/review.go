@@ -84,6 +84,28 @@ func (r *ReviewRepo) UpdateRecord(ctx context.Context, id int64, fields map[stri
 	return r.db.WithContext(ctx).Model(&model.ReviewRecord{}).Where("id = ?", id).Updates(fields).Error
 }
 
+// UpdateRecordCAS 用 SQL 行锁做真 CAS:WHERE 子句包含 expectStatus + expectStep,
+// 由 MySQL 保证读改一体。RowsAffected=0 视为版本冲突(其他 reviewer 已抢先推进/撤回)。
+//
+// 修复 P0 #6 — 原 service.Act 的 fresh.Status 校验 + UpdateRecord 是读后写两步,
+// 中间存在 race window:两个 reviewer 同时 approve,都看到 status=pending、
+// current_step=2,会先后写入 current_step=3 与 status=approved,产生重复推进。
+func (r *ReviewRepo) UpdateRecordCAS(
+	ctx context.Context,
+	id int64,
+	expectStatus string,
+	expectStep int,
+	fields map[string]any,
+) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&model.ReviewRecord{}).
+		Where("id = ? AND status = ? AND current_step = ?", id, expectStatus, expectStep).
+		Updates(fields)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
 func (r *ReviewRepo) AddNodeRecord(ctx context.Context, nr *model.ReviewNodeRecord) error {
 	nr.ActedAt = time.Now()
 	return r.db.WithContext(ctx).Create(nr).Error

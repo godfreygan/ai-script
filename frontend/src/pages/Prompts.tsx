@@ -14,6 +14,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
@@ -222,18 +223,20 @@ export default function PromptsPage() {
             onChange={(v) => setEpisodeId(v)}
             disabled={!scriptId}
           />
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            disabled={!episodeId}
-            onClick={() => {
-              setGenTopic(null);
-              genForm.resetFields();
-              setGenOpen(true);
-            }}
-          >
-            生成新提示词
-          </Button>
+          <Tooltip title={episodeId ? '调用大模型生成新一版分镜提示词' : '请先选择剧本与分集'}>
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              disabled={!episodeId}
+              onClick={() => {
+                setGenTopic(null);
+                genForm.resetFields();
+                setGenOpen(true);
+              }}
+            >
+              生成新提示词
+            </Button>
+          </Tooltip>
         </Space>
       </Card>
 
@@ -262,6 +265,11 @@ export default function PromptsPage() {
               loading={loading}
               dataSource={prompts}
               pagination={false}
+              locale={{
+                emptyText: episodeId
+                  ? '该分集暂无提示词,点击右上「生成新提示词」开始'
+                  : '请先在上方选择剧本与分集',
+              }}
               columns={[
                 { title: 'ID', dataIndex: 'id', width: 80 },
                 {
@@ -307,9 +315,11 @@ export default function PromptsPage() {
                     current?.id === r.id ? (
                       <Tag color="success">已锁定</Tag>
                     ) : (
-                      <Button size="small" type="link" onClick={() => onSetCurrent(r.id)}>
-                        设为当前
-                      </Button>
+                      <Tooltip title="将此版本锁定为当前生效的提示词">
+                        <Button size="small" type="link" onClick={() => onSetCurrent(r.id)}>
+                          设为当前
+                        </Button>
+                      </Tooltip>
                     ),
                 },
               ]}

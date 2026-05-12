@@ -38,7 +38,17 @@ func (r *RoleRepo) Create(ctx context.Context, role *model.Role) error {
 }
 
 func (r *RoleRepo) Update(ctx context.Context, role *model.Role) error {
-	return r.db.WithContext(ctx).Save(role).Error
+	// 修复 P0 #7 — 原 Save(role) 全字段写回。改 Updates(map) 只动显式字段;
+	// is_system 是建库后不应再改的标志,这里不允许通过 Update 修改,
+	// 防止 Save 把零值的 is_system 反写覆盖系统角色保护标记。
+	return r.db.WithContext(ctx).Model(&model.Role{}).Where("id = ?", role.ID).
+		Updates(map[string]any{
+			"code":        role.Code,
+			"name":        role.Name,
+			"description": role.Description,
+			"data_scope":  role.DataScope,
+			"status":      role.Status,
+		}).Error
 }
 
 func (r *RoleRepo) Delete(ctx context.Context, id int64) error {

@@ -53,7 +53,17 @@ func (r *PipelineRepo) Create(ctx context.Context, p *model.Pipeline) error {
 }
 
 func (r *PipelineRepo) Update(ctx context.Context, p *model.Pipeline) error {
-	return r.db.WithContext(ctx).Save(p).Error
+	// 修复 P0 #7 — 原 Save(p) 把全部字段写回,并发 patch(handler 改 DAG 同时
+	// 另一 handler 改 enabled)会互相覆盖。改用 Updates(map) 只写显式字段。
+	return r.db.WithContext(ctx).Model(&model.Pipeline{}).Where("id = ?", p.ID).
+		Updates(map[string]any{
+			"project_id":  p.ProjectID,
+			"name":        p.Name,
+			"description": p.Description,
+			"dag":         p.DAG,
+			"is_template": p.IsTemplate,
+			"enabled":     p.Enabled,
+		}).Error
 }
 
 func (r *PipelineRepo) Delete(ctx context.Context, id int64) error {
@@ -114,7 +124,18 @@ func (r *PipelineRepo) CreateStep(ctx context.Context, sr *model.StepRun) error 
 }
 
 func (r *PipelineRepo) UpdateStep(ctx context.Context, sr *model.StepRun) error {
-	return r.db.WithContext(ctx).Save(sr).Error
+	// 修复 P0 #7 — 原 Save(sr) 在 DAG runner 并发更新同一 step_run(重试链上
+	// 多个 goroutine 写回 status/output)时会互相覆盖。改用 Updates(map) 只写
+	// runner 显式赋值的字段;input/created_at 等不变字段不再被零值反写。
+	return r.db.WithContext(ctx).Model(&model.StepRun{}).Where("id = ?", sr.ID).
+		Updates(map[string]any{
+			"output":     sr.Output,
+			"status":     sr.Status,
+			"attempt":    sr.Attempt,
+			"started_at": sr.StartedAt,
+			"ended_at":   sr.EndedAt,
+			"error_msg":  sr.ErrorMsg,
+		}).Error
 }
 
 func (r *PipelineRepo) ListSteps(ctx context.Context, runID int64) ([]model.StepRun, error) {

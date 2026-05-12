@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/adapter"
@@ -13,8 +15,10 @@ import (
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
 	pkgcasbin "git.myscrm.cn/ganqx01/ai-script/backend/pkg/casbin"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/crypto"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/jwt"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/queue"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/response"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/storage"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
 	"github.com/casbin/casbin/v2"
@@ -110,15 +114,6 @@ func (a *App) Close() {
 	}
 }
 
-// rbac 给路由打上 (object, action) 标签;中间件按此决定是否需要鉴权
-func rbac(obj, act string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Set("rbac_obj", obj)
-		c.Set("rbac_act", act)
-		c.Next()
-	}
-}
-
 func newRouter(
 	cfg *conf.Config,
 	log *zap.Logger,
@@ -145,10 +140,22 @@ func newRouter(
 
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
-	// 本地对象存储:暴露上传文件的静态访问
+	// 本地对象存储:暴露上传文件的静态访问 (需鉴权)
+	// 修复 P0 #2 — 原 r.Static 在 JWT 之前 mount, /uploads/* 完全裸奔。
+	// 改为 JWT 保护 + 路径白名单防穿越 (../ + 绝对路径)。
 	if prefix := storage.PublicPrefix(store); prefix != "" && prefix != "/" {
 		if dir := storage.BaseDir(store); dir != "" {
-			r.Static(prefix, dir)
+			rootDir, _ := filepath.Abs(dir)
+			filesGrp := r.Group(prefix, middleware.JWTAuth(jwtMgr))
+			filesGrp.GET("/*filepath", func(c *gin.Context) {
+				rel := strings.TrimPrefix(c.Param("filepath"), "/")
+				full, err := filepath.Abs(filepath.Join(rootDir, rel))
+				if err != nil || !strings.HasPrefix(full, rootDir) {
+					response.Fail(c, errcode.ErrForbidden)
+					return
+				}
+				c.File(full)
+			})
 		}
 	}
 
@@ -163,9 +170,27 @@ func newRouter(
 		auth.POST("/refresh", h.Auth.Refresh)
 	}
 
+	// rbac 为闭包: 同时打 (object, action) 标签并执行 Casbin 校验
+	// 修复 P0 #1 — 原 group 级 middleware.RBAC 在 route 级 rbac() 之前执行,
+	// c.Get("rbac_obj")=nil 导致全员放行 (RBAC 名存实亡)。
+	rbac := func(obj, act string) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			roles, _ := c.Get("roles")
+			rs, _ := roles.([]string)
+			for _, role := range rs {
+				if ok, _ := enforcer.Enforce(role, obj, act); ok {
+					c.Set("rbac_obj", obj)
+					c.Set("rbac_act", act)
+					c.Next()
+					return
+				}
+			}
+			response.Fail(c, errcode.ErrForbidden)
+		}
+	}
+
 	authed := api.Group("",
 		middleware.JWTAuth(jwtMgr),
-		middleware.RBAC(enforcer),
 	)
 	{
 		// 当前用户 ===========

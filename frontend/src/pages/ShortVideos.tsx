@@ -16,6 +16,7 @@ import {
   Select,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import {
@@ -223,9 +224,11 @@ export default function ShortVideosPage() {
               setPage(1);
             }}
           />
-          <Button type="primary" icon={<ThunderboltOutlined />} onClick={onOpenGen}>
-            生成短视频
-          </Button>
+          <Tooltip title="基于提示词调用视频模型生成短视频(可选关联分镜/参考图)">
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={onOpenGen}>
+              生成短视频
+            </Button>
+          </Tooltip>
         </Space>
       </Card>
 
@@ -241,7 +244,11 @@ export default function ShortVideosPage() {
         loading={loading}
       >
         {list.length === 0 ? (
-          <Empty description="暂无短视频,点击右上角生成" />
+          <Empty description="暂无短视频">
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={onOpenGen}>
+              生成短视频
+            </Button>
+          </Empty>
         ) : (
           <>
             <Row gutter={[12, 12]}>
@@ -277,7 +284,9 @@ export default function ShortVideosPage() {
                         title="确认删除?"
                         onConfirm={() => onDelete(sv.id)}
                       >
-                        <DeleteOutlined />
+                        <Tooltip title="删除该短视频(不可恢复)">
+                          <DeleteOutlined />
+                        </Tooltip>
                       </Popconfirm>,
                     ]}
                   >

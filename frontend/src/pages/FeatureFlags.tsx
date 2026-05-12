@@ -3,6 +3,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Empty,
   Form,
   Input,
   Modal,
@@ -13,6 +14,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
 } from 'antd';
 import {
   DeleteOutlined,
@@ -204,12 +206,16 @@ export default function FeatureFlagsPage() {
       }
       extra={
         <Space>
-          <Button icon={<ThunderboltOutlined />} onClick={() => openEvaluate()}>
-            评估
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建开关
-          </Button>
+          <Tooltip title="按 key 在线评估某个开关对当前用户是否命中">
+            <Button icon={<ThunderboltOutlined />} onClick={() => openEvaluate()}>
+              评估
+            </Button>
+          </Tooltip>
+          <Tooltip title="新建灰度开关(可配置启用/灰度比例/白名单)">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建开关
+            </Button>
+          </Tooltip>
         </Space>
       }
     >
@@ -219,6 +225,15 @@ export default function FeatureFlagsPage() {
         loading={loading}
         dataSource={list}
         pagination={false}
+        locale={{
+          emptyText: (
+            <Empty description="还没有灰度开关">
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新建开关
+              </Button>
+            </Empty>
+          ),
+        }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 70 },
           {
@@ -233,7 +248,9 @@ export default function FeatureFlagsPage() {
             dataIndex: 'enabled',
             width: 80,
             render: (v: number, r: FeatureFlag) => (
-              <Switch checked={v === 1} onChange={(c) => toggleEnabled(r, c)} />
+              <Tooltip title={v === 1 ? '点击禁用该开关' : '点击启用该开关'}>
+                <Switch checked={v === 1} onChange={(c) => toggleEnabled(r, c)} />
+              </Tooltip>
             ),
           },
           {
@@ -262,20 +279,26 @@ export default function FeatureFlagsPage() {
             width: 240,
             render: (_: unknown, r: FeatureFlag) => (
               <Space size={4}>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-                  编辑
-                </Button>
-                <Button
-                  size="small"
-                  icon={<ThunderboltOutlined />}
-                  onClick={() => openEvaluate(r.key)}
-                >
-                  评估
-                </Button>
-                <Popconfirm title="确认删除该开关?" onConfirm={() => onDelete(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>
-                    删除
+                <Tooltip title="编辑该开关的描述/灰度/白名单(key 不可改)">
+                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
+                    编辑
                   </Button>
+                </Tooltip>
+                <Tooltip title="基于该 key 对当前账号在线评估命中结果">
+                  <Button
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    onClick={() => openEvaluate(r.key)}
+                  >
+                    评估
+                  </Button>
+                </Tooltip>
+                <Popconfirm title="确认删除该开关?" onConfirm={() => onDelete(r.id)}>
+                  <Tooltip title="删除该灰度开关(不可恢复)">
+                    <Button size="small" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Tooltip>
                 </Popconfirm>
               </Space>
             ),

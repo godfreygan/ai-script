@@ -186,7 +186,7 @@ export default function ReviewsPage() {
     if (targetType === 'full_video') {
       return (
         <Tooltip title={`点击查看视频 #${targetId}`}>
-          <a href={`/full_videos?id=${targetId}`}>{videoNameById(targetId)}</a>
+          <a href={`/full-videos?id=${targetId}`}>{videoNameById(targetId)}</a>
         </Tooltip>
       );
     }

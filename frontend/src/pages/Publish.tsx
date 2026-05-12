@@ -384,37 +384,45 @@ export default function PublishPage() {
       width: 280,
       render: (_: unknown, r: PublishItem) => (
         <Space size={4} wrap>
-          <Button
-            size="small"
-            icon={<PlayCircleOutlined />}
-            onClick={() => openPreview(r)}
-          >
-            预览
-          </Button>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => openWatermark(r)}
-          >
-            水印
-          </Button>
+          <Tooltip title="在右侧抽屉播放视频(计入一次播放)">
+            <Button
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => openPreview(r)}
+            >
+              预览
+            </Button>
+          </Tooltip>
+          <Tooltip title="编辑该视频的水印配置(文字/位置/透明度/颜色)">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openWatermark(r)}
+            >
+              水印
+            </Button>
+          </Tooltip>
           {r.status === 'on' ? (
             <Popconfirm
               title="确认下架该视频?"
               onConfirm={() => onUnpublish(r)}
             >
-              <Button size="small" danger>
-                下架
-              </Button>
+              <Tooltip title="下架后视频不再对外可见,但可重新发布">
+                <Button size="small" danger>
+                  下架
+                </Button>
+              </Tooltip>
             </Popconfirm>
           ) : (
-            <Button
-              size="small"
-              type="primary"
-              onClick={() => onRepublish(r)}
-            >
-              重新发布
-            </Button>
+            <Tooltip title="重新使用当前水印配置发布该视频">
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => onRepublish(r)}
+              >
+                重新发布
+              </Button>
+            </Tooltip>
           )}
         </Space>
       ),
@@ -456,16 +464,20 @@ export default function PublishPage() {
                 setPage(1);
               }}
             />
-            <Button icon={<ReloadOutlined />} onClick={fetchList}>
-              刷新
-            </Button>
-            <Button
-              type="primary"
-              icon={<CloudUploadOutlined />}
-              onClick={openPublish}
-            >
-              发布新视频
-            </Button>
+            <Tooltip title="刷新列表">
+              <Button icon={<ReloadOutlined />} onClick={fetchList}>
+                刷新
+              </Button>
+            </Tooltip>
+            <Tooltip title="选择一个已渲染成功的完整视频发布到对外渠道">
+              <Button
+                type="primary"
+                icon={<CloudUploadOutlined />}
+                onClick={openPublish}
+              >
+                发布新视频
+              </Button>
+            </Tooltip>
           </Space>
         }
       >
@@ -474,7 +486,19 @@ export default function PublishPage() {
           loading={loading}
           dataSource={list}
           columns={columns}
-          locale={{ emptyText: <Empty description="暂无发布记录" /> }}
+          locale={{
+            emptyText: (
+              <Empty description="暂无发布记录">
+                <Button
+                  type="primary"
+                  icon={<CloudUploadOutlined />}
+                  onClick={openPublish}
+                >
+                  发布新视频
+                </Button>
+              </Empty>
+            ),
+          }}
           pagination={{
             current: page,
             pageSize,
@@ -587,21 +611,25 @@ export default function PublishPage() {
         destroyOnClose
         extra={
           <Space>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={onMockDownload}
-              disabled={!previewItem}
-            >
-              模拟下载
-            </Button>
-            <Button
-              type="primary"
-              icon={<ShareAltOutlined />}
-              onClick={onCopyShareLink}
-              disabled={!previewItem}
-            >
-              复制分享链接
-            </Button>
+            <Tooltip title="记录一次下载次数(用于统计)">
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={onMockDownload}
+                disabled={!previewItem}
+              >
+                模拟下载
+              </Button>
+            </Tooltip>
+            <Tooltip title="复制视频外链或站内分享 URL 到剪贴板">
+              <Button
+                type="primary"
+                icon={<ShareAltOutlined />}
+                onClick={onCopyShareLink}
+                disabled={!previewItem}
+              >
+                复制分享链接
+              </Button>
+            </Tooltip>
           </Space>
         }
       >

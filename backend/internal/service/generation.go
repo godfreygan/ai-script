@@ -1080,12 +1080,50 @@ func (s *PipelineService) publish(topic, evType string, pct float64, msg string)
 	s.hub.Publish(topic, ws.Event{Type: evType, Percent: pct, Message: msg})
 }
 
-// Run 投递 pipeline.run 任务
-func (s *PipelineService) Run(ctx context.Context, pipelineID int64, input map[string]any, overrides map[string]any) (string, error) {
+// Run 投递 pipeline.run 任务。
+//
+// 修复 P0 #4:
+//   - 先 service 层创建 PipelineRun(status=queued) → 返回 int64 run.ID
+//   - 用 asynq.TaskID("pipeline-run-{run.ID}") 保证幂等(同 run.ID 不会重复入队)
+//   - 前端拿到 run.ID 后 WS 订阅 pipeline:<run.ID> 才能命中
+func (s *PipelineService) Run(ctx context.Context, pipelineID int64, input map[string]any, overrides map[string]any) (int64, error) {
+	pl, err := s.r.Pipeline.Get(ctx, pipelineID)
+	if err != nil {
+		return 0, fmt.Errorf("pipeline.run: load pipeline %d: %w", pipelineID, err)
+	}
+	if len(pl.DAG) == 0 {
+		return 0, fmt.Errorf("pipeline.run: pipeline %d has empty dag", pipelineID)
+	}
+
+	inputBytes, _ := json.Marshal(input)
+	now := time.Now()
+	run := &model.PipelineRun{
+		PipelineID:  pl.ID,
+		ProjectID:   pl.ProjectID,
+		TriggerType: "manual",
+		Input:       model.JSON(inputBytes),
+		Status:      "queued",
+		StartedAt:   &now,
+	}
+	if err := s.r.Pipeline.CreateRun(ctx, run); err != nil {
+		return 0, fmt.Errorf("pipeline.run: create run: %w", err)
+	}
+
 	payload, _ := json.Marshal(map[string]any{
-		"pipeline_id": pipelineID, "input": input, "overrides": overrides,
+		"run_id":      run.ID,
+		"pipeline_id": pipelineID,
+		"input":       input,
+		"overrides":   overrides,
 	})
-	return s.tc.Enqueue(ctx, TaskPipelineRun, payload, asynq.Queue("critical"))
+	if _, err := s.tc.Enqueue(ctx, TaskPipelineRun, payload,
+		asynq.Queue("critical"),
+		asynq.TaskID(fmt.Sprintf("pipeline-run-%d", run.ID)),
+		asynq.MaxRetry(3),
+	); err != nil {
+		_ = s.r.Pipeline.UpdateRunStatus(ctx, run.ID, "failed", "enqueue: "+err.Error())
+		return 0, err
+	}
+	return run.ID, nil
 }
 
 // ============== Asynq Task 名称常量 ==============

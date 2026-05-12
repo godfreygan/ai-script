@@ -466,17 +466,21 @@ export default function FullVideosPage() {
               渲染
             </Button>
           </Tooltip>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => openEdit(r)}
-          >
-            编辑
-          </Button>
-          <Popconfirm title="确认删除该完整视频?" onConfirm={() => onDelete(r.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
+          <Tooltip title="编辑时间线/名称/字幕设置">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEdit(r)}
+            >
+              编辑
             </Button>
+          </Tooltip>
+          <Popconfirm title="确认删除该完整视频?" onConfirm={() => onDelete(r.id)}>
+            <Tooltip title="删除该完整视频(不可恢复)">
+              <Button size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -513,12 +517,16 @@ export default function FullVideosPage() {
               setPage(1);
             }}
           />
-          <Button icon={<ReloadOutlined />} onClick={fetchList}>
-            刷新
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建
-          </Button>
+          <Tooltip title="刷新列表">
+            <Button icon={<ReloadOutlined />} onClick={fetchList}>
+              刷新
+            </Button>
+          </Tooltip>
+          <Tooltip title="新建完整视频 - 由多个短视频片段拼接而成">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建
+            </Button>
+          </Tooltip>
         </Space>
       }
     >
@@ -560,8 +568,12 @@ export default function FullVideosPage() {
           emptyText: (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="暂无完整视频,点击右上角“新建”开始"
-            />
+              description="暂无完整视频"
+            >
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新建完整视频
+              </Button>
+            </Empty>
           ),
         }}
         pagination={{
@@ -639,20 +651,24 @@ export default function FullVideosPage() {
         extra={
           <Space>
             <Button onClick={() => setEditOpen(false)}>取消</Button>
-            <Button type="primary" onClick={onSaveEdit}>
-              保存
-            </Button>
-            <Button
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              danger
-              onClick={onRenderFromDrawer}
-              disabled={
-                editTarget?.status === 'running' || editTarget?.status === 'queued'
-              }
-            >
-              渲染
-            </Button>
+            <Tooltip title="保存时间线/名称等修改(不会触发渲染)">
+              <Button type="primary" onClick={onSaveEdit}>
+                保存
+              </Button>
+            </Tooltip>
+            <Tooltip title="保存当前修改并入队渲染(覆盖式重新生成视频)">
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                danger
+                onClick={onRenderFromDrawer}
+                disabled={
+                  editTarget?.status === 'running' || editTarget?.status === 'queued'
+                }
+              >
+                渲染
+              </Button>
+            </Tooltip>
           </Space>
         }
       >
