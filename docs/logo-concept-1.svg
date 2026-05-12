@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <!-- 主渐变：深蓝到紫 -->
+    <linearGradient id="mainGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A1628"/>
+      <stop offset="50%" stop-color="#1E3A5F"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+    <!-- 发光渐变 -->
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+    <!-- 滤镜：外发光 -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景圆 -->
+  <circle cx="200" cy="180" r="140" fill="url(#mainGrad)"/>
+
+  <!-- 六边形芯片轮廓 -->
+  <polygon points="200,60 303,120 303,240 200,300 97,240 97,120"
+           fill="none" stroke="#6366F1" stroke-width="3" opacity="0.6"/>
+  <polygon points="200,75 288,126 288,234 200,285 112,234 112,126"
+           fill="none" stroke="#818CF8" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- 内部电路线 -->
+  <g stroke="#6366F1" stroke-width="2" fill="none" opacity="0.7">
+    <!-- 中心节点 -->
+    <circle cx="200" cy="180" r="8" fill="#A855F7" stroke="none" filter="url(#glow)"/>
+
+    <!-- 从中心向外辐射的线路 -->
+    <path d="M200,180 L200,100" />
+    <path d="M200,180 L270,140" />
+    <path d="M200,180 L270,220" />
+    <path d="M200,180 L200,260" />
+    <path d="M200,180 L130,220" />
+    <path d="M200,180 L130,140" />
+
+    <!-- 二级节点 -->
+    <circle cx="200" cy="100" r="4" fill="#818CF8" stroke="none"/>
+    <circle cx="270" cy="140" r="4" fill="#818CF8" stroke="none"/>
+    <circle cx="270" cy="220" r="4" fill="#818CF8" stroke="none"/>
+    <circle cx="200" cy="260" r="4" fill="#818CF8" stroke="none"/>
+    <circle cx="130" cy="220" r="4" fill="#818CF8" stroke="none"/>
+    <circle cx="130" cy="140" r="4" fill="#818CF8" stroke="none"/>
+
+    <!-- 外围连接线 -->
+    <path d="M200,100 L230,85" stroke-width="1.5" opacity="0.5"/>
+    <path d="M270,140 L290,130" stroke-width="1.5" opacity="0.5"/>
+    <path d="M270,220 L290,230" stroke-width="1.5" opacity="0.5"/>
+    <path d="M200,260 L170,275" stroke-width="1.5" opacity="0.5"/>
+    <path d="M130,220 L110,230" stroke-width="1.5" opacity="0.5"/>
+    <path d="M130,140 L110,130" stroke-width="1.5" opacity="0.5"/>
+  </g>
+
+  <!-- 播放符号（隐含视频属性）-->
+  <g transform="translate(200,180)" opacity="0.9">
+    <polygon points="-15,-18 -15,18 21,0" fill="url(#glowGrad)" filter="url(#glow)"/>
+  </g>
+
+  <!-- 光点流动效果 -->
+  <g fill="#A855F7" filter="url(#glow)">
+    <circle cx="215" cy="115" r="2" opacity="0.8">
+      <animate attributeName="opacity" values="0.8;0.2;0.8" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="255" cy="160" r="2" opacity="0.6">
+      <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="255" cy="200" r="2" opacity="0.7">
+      <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="185" cy="245" r="2" opacity="0.5">
+      <animate attributeName="opacity" values="0.5;0.1;0.5" dur="2.2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- 品牌文字 -->
+  <text x="200" y="360" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
+        font-size="36" font-weight="700" fill="#0A1628" letter-spacing="4">AI SCRIPT</text>
+  <text x="200" y="385" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
+        font-size="13" font-weight="400" fill="#6366F1" letter-spacing="6">AI短剧生成平台</text>
+</svg>

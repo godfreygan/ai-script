@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 320" width="240" height="320">
+  <defs>
+    <linearGradient id="cyber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+    <filter id="g" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Icon -->
+  <g transform="translate(120,110)">
+    <circle cx="0" cy="0" r="85" fill="#0F172A"/>
+    <circle cx="0" cy="0" r="80" fill="none" stroke="url(#cyber)" stroke-width="0.8" opacity="0.25"/>
+    <circle cx="0" cy="0" r="73" fill="none" stroke="url(#cyber)" stroke-width="0.4" opacity="0.12"/>
+
+    <g stroke="url(#cyber)" fill="none" opacity="0.85">
+      <circle cx="0" cy="0" r="11" fill="#0F172A" stroke="#06B6D4" stroke-width="2" filter="url(#g)"/>
+      <circle cx="0" cy="0" r="4.5" fill="#06B6D4" stroke="none"/>
+
+      <circle cx="0" cy="-50" r="8" fill="#0F172A" stroke="#6366F1" stroke-width="1.5"/>
+      <circle cx="43" cy="-25" r="8" fill="#0F172A" stroke="#6366F1" stroke-width="1.5"/>
+      <circle cx="43" cy="25" r="8" fill="#0F172A" stroke="#6366F1" stroke-width="1.5"/>
+      <circle cx="0" cy="50" r="8" fill="#0F172A" stroke="#6366F1" stroke-width="1.5"/>
+      <circle cx="-43" cy="25" r="8" fill="#0F172A" stroke="#6366F1" stroke-width="1.5"/>
+      <circle cx="-43" cy="-25" r="8" fill="#0F172A" stroke="#6366F1" stroke-width="1.5"/>
+
+      <path d="M0,0 L0,-42" stroke-width="1.5"/>
+      <path d="M0,0 L37,-21" stroke-width="1.5"/>
+      <path d="M0,0 L37,21" stroke-width="1.5"/>
+      <path d="M0,0 L0,42" stroke-width="1.5"/>
+      <path d="M0,0 L-37,21" stroke-width="1.5"/>
+      <path d="M0,0 L-37,-21" stroke-width="1.5"/>
+
+      <circle cx="0" cy="-75" r="5" fill="#6366F1" stroke="none"/>
+      <circle cx="65" cy="-37" r="5" fill="#6366F1" stroke="none"/>
+      <circle cx="65" cy="37" r="5" fill="#6366F1" stroke="none"/>
+      <circle cx="0" cy="75" r="5" fill="#6366F1" stroke="none"/>
+      <circle cx="-65" cy="37" r="5" fill="#6366F1" stroke="none"/>
+      <circle cx="-65" cy="-37" r="5" fill="#6366F1" stroke="none"/>
+
+      <path d="M0,-50 L0,-70" stroke-width="1" opacity="0.55"/>
+      <path d="M43,-25 L60,-33" stroke-width="1" opacity="0.55"/>
+      <path d="M43,25 L60,33" stroke-width="1" opacity="0.55"/>
+      <path d="M0,50 L0,70" stroke-width="1" opacity="0.55"/>
+      <path d="M-43,25 L-60,33" stroke-width="1" opacity="0.55"/>
+      <path d="M-43,-25 L-60,-33" stroke-width="1" opacity="0.55"/>
+    </g>
+
+    <g fill="#06B6D4" filter="url(#g)">
+      <circle cx="0" cy="-28" r="2">
+        <animate attributeName="cy" values="0;-50;0" dur="2s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="23" cy="-14" r="2">
+        <animate attributeName="cx" values="0;43;0" dur="2.4s" repeatCount="indefinite"/>
+        <animate attributeName="cy" values="0;-25;0" dur="2.4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;0.3;1" dur="2.4s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="23" cy="14" r="2">
+        <animate attributeName="cx" values="0;43;0" dur="1.8s" repeatCount="indefinite"/>
+        <animate attributeName="cy" values="0;25;0" dur="1.8s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;0.3;1" dur="1.8s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+  </g>
+
+  <!-- Text -->
+  <text x="120" y="245" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="30" font-weight="800" fill="#0F172A" letter-spacing="2">AI SCRIPT</text>
+  <text x="120" y="275" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="500" fill="#6366F1" letter-spacing="5">AI短剧视频生成平台</text>
+</svg>

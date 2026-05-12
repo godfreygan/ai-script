@@ -1,0 +1,95 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ai-script-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_script}
+      MYSQL_USER: ${MYSQL_USER:-ai_script}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ai_script123}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+      - --max-connections=500
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../scripts/sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-script-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: ai-script-backend:dev
+    container_name: ai-script-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      APP_PORT: "8080"
+      MYSQL_DSN: ${MYSQL_USER:-ai_script}:${MYSQL_PASSWORD:-ai_script123}@tcp(mysql:3306)/${MYSQL_DATABASE:-ai_script}?charset=utf8mb4&parseTime=true&loc=Local
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: ${JWT_SECRET:-please-change-me-in-prod}
+      CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:-Z3JhZGUtMzItYnl0ZS1leGFtcGxlLWtleS1iYXNlNjQtcGxlYXNlLWNoYW5nZQ==}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    command: ["/app/server"]
+
+  worker:
+    image: ai-script-backend:dev
+    container_name: ai-script-worker
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      MYSQL_DSN: ${MYSQL_USER:-ai_script}:${MYSQL_PASSWORD:-ai_script123}@tcp(mysql:3306)/${MYSQL_DATABASE:-ai_script}?charset=utf8mb4&parseTime=true&loc=Local
+      REDIS_ADDR: redis:6379
+      CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:-Z3JhZGUtMzItYnl0ZS1leGFtcGxlLWtleS1iYXNlNjQtcGxlYXNlLWNoYW5nZQ==}
+    depends_on:
+      backend:
+        condition: service_started
+    command: ["/app/worker"]
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: ai-script-frontend:dev
+    container_name: ai-script-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  mysql_data:
+  redis_data:

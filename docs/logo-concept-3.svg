@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <!-- 紫色渐变 -->
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+    <!-- 粉红到紫的渐变 -->
+    <linearGradient id="pinkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EC4899"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 白色背景 -->
+  <rect width="400" height="400" fill="#FFFFFF"/>
+
+  <!-- 主图形：抽象A字母 + 播放符号 -->
+  <g transform="translate(200, 165)">
+    <!-- 外三角轮廓（A的抽象）-->
+    <polygon points="0,-80 70,60 45,60 0,-25 -45,60 -70,60"
+             fill="url(#purpleGrad)"/>
+
+    <!-- 中间的横线（A的中间一横，同时是视频进度条）-->
+    <rect x="-50" y="25" width="100" height="10" rx="5" fill="url(#pinkGrad)"/>
+
+    <!-- 进度条上的播放头 -->
+    <circle cx="15" cy="30" r="14" fill="#FFFFFF"/>
+    <polygon points="10,23 10,37 24,30" fill="url(#purpleGrad)"/>
+
+    <!-- 点缀的像素点（暗示AI生成/像素化）-->
+    <rect x="-35" y="-50" width="8" height="8" rx="2" fill="#EC4899" opacity="0.8"/>
+    <rect x="-20" y="-65" width="6" height="6" rx="1.5" fill="#8B5CF6" opacity="0.6"/>
+    <rect x="30" y="-45" width="7" height="7" rx="2" fill="#EC4899" opacity="0.7"/>
+    <rect x="45" y="-30" width="5" height="5" rx="1" fill="#4F46E5" opacity="0.5"/>
+    <rect x="-50" y="-35" width="5" height="5" rx="1" fill="#4F46E5" opacity="0.4"/>
+  </g>
+
+  <!-- 底部文字 -->
+  <text x="200" y="310" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
+        font-size="40" font-weight="800" fill="#1E1B4B" letter-spacing="3">AI SCRIPT</text>
+  <text x="200" y="338" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
+        font-size="14" font-weight="500" fill="#7C3AED" letter-spacing="6">AI短剧视频生成</text>
+
+  <!-- 底部装饰线 -->
+  <rect x="130" y="355" width="140" height="3" rx="1.5" fill="url(#pinkGrad)" opacity="0.6"/>
+</svg>

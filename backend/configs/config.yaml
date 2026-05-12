@@ -1,0 +1,36 @@
+app:
+  name: ai-script
+  env: ${APP_ENV:dev}
+  port: ${APP_PORT:8080}
+  log_level: ${APP_LOG_LEVEL:info}
+
+jwt:
+  secret: ${JWT_SECRET:please-change-me}
+  access_expires_in: ${JWT_EXPIRES_IN:7200}
+  refresh_expires_in: ${JWT_REFRESH_EXPIRES_IN:604800}
+
+mysql:
+  dsn: ${MYSQL_DSN}
+  max_idle: ${MYSQL_MAX_IDLE:10}
+  max_open: ${MYSQL_MAX_OPEN:100}
+
+redis:
+  addr: ${REDIS_ADDR:127.0.0.1:6379}
+  password: ${REDIS_PASSWORD:}
+  db: ${REDIS_DB:0}
+
+storage:
+  provider: ${OSS_PROVIDER:local}
+  endpoint: ${OSS_ENDPOINT}
+  region: ${OSS_REGION}
+  bucket: ${OSS_BUCKET:./var/uploads}
+  access_key: ${OSS_ACCESS_KEY}
+  secret_key: ${OSS_SECRET_KEY}
+  public_host: ${OSS_PUBLIC_HOST:/uploads}
+
+crypto:
+  key: ${CRYPTO_KEY}
+
+model_gateway:
+  url: ${MODEL_GATEWAY_URL}
+  key: ${MODEL_GATEWAY_KEY}

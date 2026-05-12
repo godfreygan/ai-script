@@ -1,0 +1,664 @@
+openapi: 3.0.3
+info:
+  title: AI 短剧视频生成平台 API
+  description: |
+    AI Short Drama Video Platform Internal API.
+    本规范覆盖 MVP 核心端点;完整端点列表参考 docs/api-design.md。
+  version: 1.0.0
+  contact:
+    name: AI Video Platform Team
+servers:
+  - url: https://ai-script.intra.example.com/api/v1
+    description: 内网环境
+  - url: http://localhost:8080/api/v1
+    description: 本地开发
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Project
+  - name: Script
+  - name: Episode
+  - name: Prompt
+  - name: Storyboard
+  - name: Style
+  - name: Image
+  - name: ShortVideo
+  - name: FullVideo
+  - name: Review
+  - name: Publish
+  - name: User
+  - name: Role
+  - name: Model
+  - name: Billing
+  - name: Pipeline
+  - name: Task
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          access_token: { type: string }
+                          refresh_token: { type: string }
+                          expires_in: { type: integer }
+                          user: { $ref: '#/components/schemas/User' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: 登出
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  /users/me:
+    get:
+      tags: [User]
+      summary: 当前用户
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/User' }
+
+  /projects:
+    get:
+      tags: [Project]
+      summary: 项目列表
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - in: query
+          name: status
+          schema: { type: integer }
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Page'
+                          - properties:
+                              list:
+                                type: array
+                                items: { $ref: '#/components/schemas/Project' }
+    post:
+      tags: [Project]
+      summary: 创建项目
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreate' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Project' }
+
+  /projects/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Project]
+      summary: 项目详情
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Project' }
+    put:
+      tags: [Project]
+      summary: 更新
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreate' }
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    delete:
+      tags: [Project]
+      summary: 删除
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  /projects/{pid}/scripts:upload:
+    parameters:
+      - in: path
+        name: pid
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Script]
+      summary: 上传剧本
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                name: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Script' }
+
+  /scripts/{id}:split-episodes:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Script]
+      summary: AI 自动拆分集(异步)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_id: { type: integer }
+                params: { type: object, additionalProperties: true }
+      responses:
+        '200': { $ref: '#/components/responses/AsyncTask' }
+
+  /episodes/{eid}/prompts:generate:
+    parameters:
+      - in: path
+        name: eid
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Prompt]
+      summary: 生成分集提示词(异步)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model_id]
+              properties:
+                model_id: { type: integer }
+                template_id: { type: string }
+                params: { type: object, additionalProperties: true }
+      responses:
+        '200': { $ref: '#/components/responses/AsyncTask' }
+
+  /episodes/{eid}/storyboards:generate:
+    parameters:
+      - in: path
+        name: eid
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Storyboard]
+      summary: 生成分镜(异步)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model_id]
+              properties:
+                model_id: { type: integer }
+                prompt_id: { type: integer }
+                params: { type: object, additionalProperties: true }
+      responses:
+        '200': { $ref: '#/components/responses/AsyncTask' }
+
+  /storyboards:apply-style:
+    post:
+      tags: [Style]
+      summary: 批量套风格
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [storyboard_ids, style_id]
+              properties:
+                storyboard_ids:
+                  type: array
+                  items: { type: integer }
+                style_id: { type: integer }
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  /images:generate:
+    post:
+      tags: [Image]
+      summary: 生成图片(异步)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model_id, prompt]
+              properties:
+                storyboard_id: { type: integer }
+                style_id: { type: integer }
+                model_id: { type: integer }
+                prompt: { type: string }
+                neg_prompt: { type: string }
+                params: { type: object, additionalProperties: true }
+      responses:
+        '200': { $ref: '#/components/responses/AsyncTask' }
+
+  /short-videos:generate:
+    post:
+      tags: [ShortVideo]
+      summary: 生成短视频(异步)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model_id]
+              properties:
+                storyboard_id: { type: integer }
+                source_image_ids:
+                  type: array
+                  items: { type: integer }
+                prompt: { type: string }
+                model_id: { type: integer }
+                params: { type: object, additionalProperties: true }
+      responses:
+        '200': { $ref: '#/components/responses/AsyncTask' }
+
+  /full-videos/{id}:render:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [FullVideo]
+      summary: 渲染完整视频(异步)
+      responses: { '200': { $ref: '#/components/responses/AsyncTask' } }
+
+  /pipelines:
+    get:
+      tags: [Pipeline]
+      summary: 流水线列表
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    post:
+      tags: [Pipeline]
+      summary: 创建流水线
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Pipeline' }
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  /pipelines/{id}:run:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Pipeline]
+      summary: 触发流水线运行
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: { type: object, additionalProperties: true }
+                node_overrides: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          run_id: { type: string }
+                          status: { type: string }
+
+  /tasks/{task_id}:
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Task]
+      summary: 查询任务状态
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Task' }
+
+components:
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: integer, format: int64 }
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, default: 1, minimum: 1 }
+    PageSize:
+      in: query
+      name: page_size
+      schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiTokenAuth:
+      type: apiKey
+      in: header
+      name: X-API-Token
+
+  responses:
+    Ok:
+      description: ok
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    AsyncTask:
+      description: 异步任务已入队
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    type: object
+                    properties:
+                      task_id: { type: string }
+                      run_id: { type: string }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: ok }
+        data: { }
+        request_id: { type: string }
+
+    Page:
+      type: object
+      properties:
+        list:
+          type: array
+          items: { type: object }
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        nickname: { type: string }
+        email: { type: string }
+        dept_id: { type: integer }
+        status: { type: integer }
+        roles:
+          type: array
+          items: { type: string }
+
+    Project:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_id: { type: integer }
+        dept_id: { type: integer }
+        status: { type: integer }
+        default_pipeline_id: { type: integer }
+        cover_url: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ProjectCreate:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        dept_id: { type: integer }
+        default_pipeline_id: { type: integer }
+        cover_url: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    Script:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        name: { type: string }
+        source_url: { type: string }
+        current_version: { type: integer }
+        status: { type: integer }
+        meta: { type: object, additionalProperties: true }
+
+    Episode:
+      type: object
+      properties:
+        id: { type: integer }
+        script_id: { type: integer }
+        ep_no: { type: integer }
+        title: { type: string }
+        summary: { type: string }
+        status: { type: integer }
+
+    EpisodePrompt:
+      type: object
+      properties:
+        id: { type: integer }
+        episode_id: { type: integer }
+        version: { type: integer }
+        is_current: { type: boolean }
+        content:
+          type: object
+          properties:
+            scene_brief: { type: string }
+            key_scenes: { type: array, items: { type: string } }
+            characters:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  description: { type: string }
+            shot_suggestions: { type: array, items: { type: string } }
+        model_id: { type: integer }
+        status: { type: integer }
+
+    Storyboard:
+      type: object
+      properties:
+        id: { type: integer }
+        episode_id: { type: integer }
+        shot_no: { type: integer }
+        shot_type: { type: string }
+        camera_motion: { type: string }
+        scene_desc: { type: string }
+        action: { type: string }
+        dialogue: { type: string }
+        duration_sec: { type: integer }
+
+    Style:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        art_style: { type: string }
+        color_tone: { type: string }
+        lighting: { type: string }
+        reference_images:
+          type: array
+          items: { type: string }
+
+    Image:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        storyboard_id: { type: integer }
+        src_type: { type: string }
+        url: { type: string }
+        thumb_url: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+
+    ShortVideo:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        storyboard_id: { type: integer }
+        src_type: { type: string }
+        video_url: { type: string }
+        thumb_url: { type: string }
+        duration_ms: { type: integer }
+        status: { type: string }
+
+    FullVideo:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        name: { type: string }
+        timeline: { type: object, additionalProperties: true }
+        output_url: { type: string }
+        duration_ms: { type: integer }
+        status: { type: string }
+        render_progress: { type: integer }
+
+    Model:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [text, image, video, audio] }
+        provider: { type: string }
+        enabled: { type: boolean }
+        priority: { type: integer }
+        capability_tags:
+          type: array
+          items: { type: string }
+
+    Pipeline:
+      type: object
+      required: [name, dag]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        project_id: { type: integer }
+        is_template: { type: boolean }
+        enabled: { type: boolean }
+        dag:
+          type: object
+          properties:
+            nodes:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  type: { type: string }
+                  model_id: { type: integer }
+                  params: { type: object, additionalProperties: true }
+            edges:
+              type: array
+              items:
+                type: object
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  mapping: { type: object, additionalProperties: true }
+
+    Task:
+      type: object
+      properties:
+        task_id: { type: string }
+        type: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        progress: { type: integer }
+        result: { }
+        error: { type: string }

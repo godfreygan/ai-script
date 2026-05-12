@@ -1,0 +1,165 @@
+version: "3.9"
+
+# ai-script local development stack
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: ai-script-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PWD:-root_pwd_change_me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_script}
+      MYSQL_USER: ${MYSQL_USER:-ai_script}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ai_script_pwd}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PWD:-root_pwd_change_me}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ai-script-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-script-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ai-script-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: ai-script-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ai-script-net
+
+  server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ai-script/backend:local
+    container_name: ai-script-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_PORT: ${APP_PORT:-8080}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-debug}
+      CONFIG_FILE: ${CONFIG_FILE:-/app/configs/config.local.yaml}
+      MYSQL_DSN: ${MYSQL_DSN:-ai_script:ai_script_pwd@tcp(mysql:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local}
+      MYSQL_MAX_IDLE: ${MYSQL_MAX_IDLE:-10}
+      MYSQL_MAX_OPEN: ${MYSQL_MAX_OPEN:-100}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      OSS_PROVIDER: ${OSS_PROVIDER:-minio}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-http://minio:9000}
+      OSS_REGION: ${OSS_REGION:-us-east-1}
+      OSS_BUCKET: ${OSS_BUCKET:-ai-script}
+      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:-minioadmin}
+      OSS_SECRET_KEY: ${OSS_SECRET_KEY:-minioadmin}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_TO_RANDOM_32_BYTES}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7200}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-604800}
+      CRYPTO_KEY: ${CRYPTO_KEY:-CHANGE_ME_TO_RANDOM_32_BYTES}
+      MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
+      MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - ./backend/configs:/app/configs:ro
+    entrypoint: ["/app/server"]
+    networks:
+      - ai-script-net
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ai-script/backend:local
+    container_name: ai-script-worker
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-debug}
+      CONFIG_FILE: ${CONFIG_FILE:-/app/configs/config.local.yaml}
+      MYSQL_DSN: ${MYSQL_DSN:-ai_script:ai_script_pwd@tcp(mysql:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local}
+      MYSQL_MAX_IDLE: ${MYSQL_MAX_IDLE:-10}
+      MYSQL_MAX_OPEN: ${MYSQL_MAX_OPEN:-100}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      OSS_PROVIDER: ${OSS_PROVIDER:-minio}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-http://minio:9000}
+      OSS_REGION: ${OSS_REGION:-us-east-1}
+      OSS_BUCKET: ${OSS_BUCKET:-ai-script}
+      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:-minioadmin}
+      OSS_SECRET_KEY: ${OSS_SECRET_KEY:-minioadmin}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_TO_RANDOM_32_BYTES}
+      CRYPTO_KEY: ${CRYPTO_KEY:-CHANGE_ME_TO_RANDOM_32_BYTES}
+      MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
+      MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
+    volumes:
+      - ./backend/configs:/app/configs:ro
+    entrypoint: ["/app/worker"]
+    networks:
+      - ai-script-net
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+
+networks:
+  ai-script-net:
+    driver: bridge

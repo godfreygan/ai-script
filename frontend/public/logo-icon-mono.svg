@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#334155" stroke-width="2"/>
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#334155" stroke-width="1" opacity="0.5"/>
+
+  <g stroke="#334155" fill="none" opacity="0.9">
+    <circle cx="100" cy="100" r="10" fill="#FFFFFF" stroke="#334155" stroke-width="2"/>
+    <circle cx="100" cy="100" r="4" fill="#334155" stroke="none"/>
+
+    <circle cx="100" cy="55" r="7" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="139" cy="77" r="7" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="139" cy="123" r="7" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="100" cy="145" r="7" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="61" cy="123" r="7" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="61" cy="77" r="7" fill="#FFFFFF" stroke="#334155" stroke-width="1.5"/>
+
+    <path d="M100,100 L100,62" stroke-width="1.5"/>
+    <path d="M100,100 L133,80" stroke-width="1.5"/>
+    <path d="M100,100 L133,120" stroke-width="1.5"/>
+    <path d="M100,100 L100,138" stroke-width="1.5"/>
+    <path d="M100,100 L67,120" stroke-width="1.5"/>
+    <path d="M100,100 L67,80" stroke-width="1.5"/>
+
+    <circle cx="100" cy="28" r="4.5" fill="#334155" stroke="none"/>
+    <circle cx="162" cy="64" r="4.5" fill="#334155" stroke="none"/>
+    <circle cx="162" cy="136" r="4.5" fill="#334155" stroke="none"/>
+    <circle cx="100" cy="172" r="4.5" fill="#334155" stroke="none"/>
+    <circle cx="38" cy="136" r="4.5" fill="#334155" stroke="none"/>
+    <circle cx="38" cy="64" r="4.5" fill="#334155" stroke="none"/>
+
+    <path d="M100,55 L100,32" stroke-width="1" opacity="0.6"/>
+    <path d="M139,77 L158,66" stroke-width="1" opacity="0.6"/>
+    <path d="M139,123 L158,134" stroke-width="1" opacity="0.6"/>
+    <path d="M100,145 L100,168" stroke-width="1" opacity="0.6"/>
+    <path d="M61,123 L42,134" stroke-width="1" opacity="0.6"/>
+    <path d="M61,77 L42,66" stroke-width="1" opacity="0.6"/>
+  </g>
+</svg>

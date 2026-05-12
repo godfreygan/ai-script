@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(go get *)",
+      "Bash(go mod *)",
+      "Bash(go run *)",
+      "Bash(go vet *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(go env *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Read(//c/Users/ganqx01/.claude/skills/pua-debugging/**)",
+      "Read(//c/Users/ganqx01/.pua/**)",
+      "Bash(awk 'END{print NR}' src/pages/Pipelines.tsx)",
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.json)",
+      "Bash(awk '/^export default function PipelinesPage/{print NR\": \"$0}' src/pages/Pipelines.tsx)",
+      "Bash(echo \"---EXIT=$?---\")",
+      "Bash(go test *)"
+    ]
+  }
+}

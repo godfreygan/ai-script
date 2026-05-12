@@ -1,0 +1,23 @@
+# Build artifacts
+backend/server
+backend/worker
+backend/*.exe
+frontend/dist
+frontend/node_modules
+
+# Local config
+backend/configs/config.local.yaml
+deploy/.env
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

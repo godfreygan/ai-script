@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv \"E:/data/go/src/git.myscrm.cn/ganqx01/ai-video/backend/docs/architecture.md\" \"E:/data/go/src/git.myscrm.cn/ganqx01/ai-video/docs/\")",
+      "Bash(mv \"E:/data/go/src/git.myscrm.cn/ganqx01/ai-video/backend/docs/system-guide.md\" \"E:/data/go/src/git.myscrm.cn/ganqx01/ai-video/docs/\")",
+      "Bash(mv \"E:/data/go/src/git.myscrm.cn/ganqx01/ai-video/backend/docs/user-guide.md\" \"E:/data/go/src/git.myscrm.cn/ganqx01/ai-video/docs/\")"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+# Go 工件
+out/
+*.exe
+*.test
+*.prof
+*.log
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Coverage
+coverage.out
