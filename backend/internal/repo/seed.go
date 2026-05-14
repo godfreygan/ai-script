@@ -45,11 +45,11 @@ func (r *Repositories) Seed(ctx context.Context) error {
 	db := r.DB.WithContext(ctx)
 
 	// 1. 角色
-	adminRole, err := seedRole(db, "admin", "管理员", "拥有系统全部权限", "all", 1)
+	adminRole, err := seedRole(db, "super_admin", "超级管理员", "拥有系统全部权限", "all", 1)
 	if err != nil {
 		return fmt.Errorf("seed admin role: %w", err)
 	}
-	userRole, err := seedRole(db, "user", "普通用户", "默认业务用户", "self", 1)
+	userRole, err := seedRole(db, "viewer", "访客", "只读已发布", "all", 1)
 	if err != nil {
 		return fmt.Errorf("seed user role: %w", err)
 	}
@@ -226,7 +226,7 @@ func seedCasbinRules(db *gorm.DB) error {
 	rules := make([]casbinRule, 0, 256)
 	for _, res := range seedResources {
 		for _, act := range seedActions {
-			rules = append(rules, casbinRule{Ptype: "p", V0: "admin", V1: res, V2: act})
+			rules = append(rules, casbinRule{Ptype: "p", V0: "super_admin", V1: res, V2: act})
 		}
 	}
 	ownedSet := map[string]bool{}
@@ -234,10 +234,10 @@ func seedCasbinRules(db *gorm.DB) error {
 		ownedSet[r] = true
 	}
 	for _, res := range seedResources {
-		rules = append(rules, casbinRule{Ptype: "p", V0: "user", V1: res, V2: "read"})
+		rules = append(rules, casbinRule{Ptype: "p", V0: "viewer", V1: res, V2: "read"})
 		if ownedSet[res] {
-			rules = append(rules, casbinRule{Ptype: "p", V0: "user", V1: res, V2: "create"})
-			rules = append(rules, casbinRule{Ptype: "p", V0: "user", V1: res, V2: "update"})
+			rules = append(rules, casbinRule{Ptype: "p", V0: "viewer", V1: res, V2: "create"})
+			rules = append(rules, casbinRule{Ptype: "p", V0: "viewer", V1: res, V2: "update"})
 		}
 	}
 	// gorm-adapter 没有 unique index,这里先用 ptype+v0+v1+v2 去重检查再 insert,保持幂等

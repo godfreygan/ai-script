@@ -9,7 +9,6 @@
 
 # Documentation
 *.md
-docs/
 
 # Test artifacts
 *_test.go

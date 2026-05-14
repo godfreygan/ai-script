@@ -18,10 +18,13 @@ type BillingHandler struct {
 
 func (h *BillingHandler) ListQuotas(c *gin.Context) {
 	scopeType := c.Query("scope_type")
-	scopeID, err := strconv.ParseInt(c.Query("scope_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var scopeID int64
+	if s := c.Query("scope_id"); s != "" {
+		var err error
+		if scopeID, err = strconv.ParseInt(s, 10, 64); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
 	list, err := h.billing.ListQuotas(c.Request.Context(), scopeType, scopeID)
 	if err != nil {
@@ -106,20 +109,27 @@ func (h *BillingHandler) ListDaily(c *gin.Context) {
 			to = t
 		}
 	}
-	userID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var userID, deptID, modelID int64
+	if s := c.Query("user_id"); s != "" {
+		var err error
+		if userID, err = strconv.ParseInt(s, 10, 64); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
-	deptID, err := strconv.ParseInt(c.Query("dept_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	if s := c.Query("dept_id"); s != "" {
+		var err error
+		if deptID, err = strconv.ParseInt(s, 10, 64); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
-	modelID, err := strconv.ParseInt(c.Query("model_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	if s := c.Query("model_id"); s != "" {
+		var err error
+		if modelID, err = strconv.ParseInt(s, 10, 64); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
 	list, err := h.billing.ListDaily(c.Request.Context(), from, to, userID, deptID, modelID)
 	if err != nil {

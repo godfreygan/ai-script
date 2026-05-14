@@ -90,8 +90,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:9003:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -150,7 +150,7 @@ services:
       OSS_BUCKET: ${OSS_BUCKET:-ai-script}
       OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:?OSS_ACCESS_KEY is required}
       OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
-      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9002/ai-script}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7200}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-604800}
@@ -191,6 +191,9 @@ services:
           memory: 256M
 
   worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
     image: ai-script-backend:dev
     container_name: ai-script-worker
     restart: unless-stopped
@@ -222,7 +225,7 @@ services:
       OSS_BUCKET: ${OSS_BUCKET:-ai-script}
       OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:?OSS_ACCESS_KEY is required}
       OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
-      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9002/ai-script}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CRYPTO_KEY: ${CRYPTO_KEY:-}
       CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:?CRYPTO_KEY_BASE64 is required}

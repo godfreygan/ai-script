@@ -54,8 +54,9 @@ func ProvideJWTManager(cfg *conf.Config) *jwt.Manager {
 }
 
 // ProvideCipher builds the crypto cipher from config.
+// Validate() 已将 CRYPTO_KEY_BASE64 解码到 Crypto.Key，此处直接使用原始字节。
 func ProvideCipher(cfg *conf.Config) (*crypto.Cipher, error) {
-	return crypto.New(cfg.Crypto.Key)
+	return crypto.NewFromBytes([]byte(cfg.Crypto.Key))
 }
 
 // ProvideTaskClient builds the Asynq task client from config.

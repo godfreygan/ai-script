@@ -27,10 +27,12 @@ func (h *FullVideoHandler) List(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	projectID, err := strconv.ParseInt(c.Query("project_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var projectID int64
+	if s := c.Query("project_id"); s != "" {
+		if projectID, err = strconv.ParseInt(s, 10, 64); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
 	status := c.Query("status")
 

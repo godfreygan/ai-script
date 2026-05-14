@@ -110,7 +110,20 @@
       "Bash(GIT_DIR=E:/data/go/src/git.myscrm.cn/ganqx01/ai-script/.git GIT_WORK_TREE=E:/data/go/src/git.myscrm.cn/ganqx01/ai-script/.claude/worktrees/agent-a807d3660b34d4f58 git diff *)",
       "Bash(python3 *)",
       "Bash(GIT_DIR=E:/data/go/src/git.myscrm.cn/ganqx01/ai-script/.git GIT_WORK_TREE=E:/data/go/src/git.myscrm.cn/ganqx01/ai-script/.claude/worktrees/agent-a968c3072309f99c3 git diff *)",
-      "Read(//e/data/go/src/git.myscrm.cn/ganqx01/**)"
+      "Read(//e/data/go/src/git.myscrm.cn/ganqx01/**)",
+      "Bash(docker compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose restart backend worker 2>&1)",
+      "Bash(docker ps:*)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose build --no-cache frontend)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose build frontend)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose up -d --force-recreate frontend)",
+      "Bash(curl -s http://localhost:8080/healthz/live)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:80)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose build --no-cache backend)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose up -d --force-recreate backend worker)",
+      "Bash(curl:*)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose build backend)"
     ]
   }
 }

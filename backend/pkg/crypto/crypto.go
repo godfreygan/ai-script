@@ -20,8 +20,17 @@ func New(b64Key string) (*Cipher, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newFromBytes(key)
+}
+
+// NewFromBytes 使用原始 32 字节密钥构造 Cipher。
+func NewFromBytes(key []byte) (*Cipher, error) {
+	return newFromBytes(key)
+}
+
+func newFromBytes(key []byte) (*Cipher, error) {
 	if len(key) != 32 {
-		return nil, errors.New("crypto key must be 32 bytes (base64)")
+		return nil, errors.New("crypto key must be 32 bytes")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {

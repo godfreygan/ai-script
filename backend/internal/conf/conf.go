@@ -213,10 +213,13 @@ func hasDSNPassword(dsn string) bool {
 	return strings.TrimSpace(matches[1]) != ""
 }
 
-// expandEnv 把 ${VAR:default} 展开
+// expandEnv 把 ${VAR:default} 展开（仅处理标量 string/int/bool，跳过 slice/map 避免覆盖）
 func expandEnv(v *viper.Viper) {
 	for _, key := range v.AllKeys() {
-		val := v.GetString(key)
-		v.Set(key, os.ExpandEnv(val))
+		val := v.Get(key)
+		switch val.(type) {
+		case string:
+			v.Set(key, os.ExpandEnv(val.(string)))
+		}
 	}
 }

@@ -3,7 +3,8 @@ app:
   env: local
   port: 8080
   log_level: debug
-  origins: []
+  origins:
+    - http://localhost
 
 jwt:
   secret: ${JWT_SECRET}
@@ -31,16 +32,17 @@ migrate:
   dsn: ""
 
 storage:
-  provider: local
+  provider: ${OSS_PROVIDER}
   endpoint: ${OSS_ENDPOINT}
   region: ${OSS_REGION}
-  bucket: ./var/uploads
+  bucket: ${OSS_BUCKET}
   access_key: ${OSS_ACCESS_KEY}
   secret_key: ${OSS_SECRET_KEY}
-  public_host: /uploads
+  public_host: ${OSS_PUBLIC_HOST}
 
 crypto:
   key: ${CRYPTO_KEY}
+  key_base64: ${CRYPTO_KEY_BASE64}
 
 queue:
   concurrency: 16

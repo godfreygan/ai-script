@@ -10,8 +10,8 @@ RUN npm run build
 # ---------- runtime stage ----------
 FROM nginx:1.27-alpine
 
-# Create non-root user appuser (uid 101) belonging to nginx group (gid 101)
-RUN adduser -u 101 -G nginx -s /sbin/nologin -D appuser
+# Create non-root user appuser (uid 1001) belonging to nginx group (gid 101)
+RUN adduser -u 1001 -G nginx -s /sbin/nologin -D appuser
 
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html

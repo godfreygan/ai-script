@@ -27,15 +27,21 @@ func (h *ScriptHandler) List(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	pid, err := strconv.ParseInt(c.Query("project_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var pid int64
+	if s := c.Query("project_id"); s != "" {
+		pid, err = strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
-	st, err := strconv.Atoi(c.Query("status"))
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var st int
+	if s := c.DefaultQuery("status", "0"); s != "" {
+		st, err = strconv.Atoi(s)
+		if err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
 	q := &repo.ListScriptsQuery{
 		Page: page, PageSize: pageSize,

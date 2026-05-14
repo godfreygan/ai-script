@@ -18,7 +18,7 @@ type FactoryConfig struct {
 //   - "local"  (默认):本地文件存储,bucket -> 目录,public_host -> URL 前缀
 //   - "aliyun_oss":阿里云 OSS
 //   - "tencent_cos":腾讯云 COS
-//   - "s3" / "minio":占位返回错误,后续实现
+//   - "s3" / "minio":AWS S3 及兼容存储(如 MinIO)
 func New(cfg FactoryConfig) (Storage, error) {
 	switch cfg.Provider {
 	case "", "local":
@@ -40,7 +40,14 @@ func New(cfg FactoryConfig) (Storage, error) {
 			PublicHost: cfg.PublicHost,
 		})
 	case "s3", "minio":
-		return nil, fmt.Errorf("storage provider %q not implemented yet; please set OSS_PROVIDER=local for now", cfg.Provider)
+		return NewS3(S3Config{
+			Endpoint:   cfg.Endpoint,
+			Region:     cfg.Region,
+			Bucket:     cfg.Bucket,
+			AccessKey:  cfg.AccessKey,
+			SecretKey:  cfg.SecretKey,
+			PublicHost: cfg.PublicHost,
+		})
 	default:
 		return nil, fmt.Errorf("unknown storage provider %q", cfg.Provider)
 	}

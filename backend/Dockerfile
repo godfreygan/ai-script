@@ -1,13 +1,13 @@
-# syntax=docker/dockerfile:1.7
 # ---------- builder ----------
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /src
-ENV CGO_ENABLED=0 GOOS=linux GOPROXY=https://goproxy.cn,direct
+ENV CGO_ENABLED=0 GOOS=linux GOPROXY=https://goproxy.cn,direct GOGC=50
 COPY go.mod go.sum* ./
 RUN go mod download || true
 COPY . .
-RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server \
- && go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+# 分两次编译，避免两个进程同时占用内存导致 OOM
+RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+RUN go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 # ---------- runtime ----------
 FROM alpine:3.20

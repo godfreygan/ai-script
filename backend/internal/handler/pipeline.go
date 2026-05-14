@@ -27,20 +27,26 @@ func (h *PipelineHandler) List(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	projectID, err := strconv.ParseInt(c.Query("project_id"), 10, 64)
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var projectID int64
+	if s := c.Query("project_id"); s != "" {
+		if projectID, err = strconv.ParseInt(s, 10, 64); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
-	isTemplate, err := strconv.Atoi(c.Query("is_template"))
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var isTemplate int
+	if s := c.Query("is_template"); s != "" {
+		if isTemplate, err = strconv.Atoi(s); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
-	enabled, err := strconv.Atoi(c.Query("enabled"))
-	if err != nil {
-		response.Fail(c, errcode.ErrParam.Wrap(err))
-		return
+	var enabled int
+	if s := c.Query("enabled"); s != "" {
+		if enabled, err = strconv.Atoi(s); err != nil {
+			response.Fail(c, errcode.ErrParam.Wrap(err))
+			return
+		}
 	}
 
 	q := &repo.ListPipelinesQuery{

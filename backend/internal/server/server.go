@@ -320,6 +320,13 @@ func newRouter(
 			roles, _ := c.Get("roles")
 			rs, _ := roles.([]string)
 			for _, role := range rs {
+				// 超管直接放行
+				if role == "super_admin" {
+					c.Set("rbac_obj", obj)
+					c.Set("rbac_act", act)
+					c.Next()
+					return
+				}
 				if ok, _ := enforcer.Enforce(role, obj, act); ok {
 					c.Set("rbac_obj", obj)
 					c.Set("rbac_act", act)
