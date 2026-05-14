@@ -69,7 +69,7 @@ type Script struct {
 	SourceURL      string `gorm:"size:512" json:"source_url"`
 	RawText        string `gorm:"type:mediumtext" json:"raw_text"`
 	CurrentVersion int    `gorm:"default:1" json:"current_version"`
-	Status         int8   `gorm:"default:1" json:"status"` // 1=uploaded 2=parsed 3=episode_split
+	Status         int8   `gorm:"default:1;index" json:"status"` // 1=uploaded 2=parsed 3=episode_split
 	Meta           JSON   `gorm:"type:json" json:"meta"`
 }
 
@@ -169,20 +169,20 @@ func (StoryboardStyle) TableName() string { return "storyboard_styles" }
 
 type Image struct {
 	Base
-	ProjectID         int64  `gorm:"index" json:"project_id"`
-	StoryboardID      int64  `gorm:"index" json:"storyboard_id"`
-	SrcType           string `gorm:"size:16;default:generated" json:"src_type"`
-	URL               string `gorm:"size:512" json:"url"`
-	ThumbURL          string `gorm:"size:512" json:"thumb_url"`
-	Width             int    `json:"width"`
-	Height            int    `json:"height"`
-	Prompt            string `gorm:"type:text" json:"prompt"`
-	NegPrompt         string `gorm:"type:text;column:neg_prompt" json:"neg_prompt"`
-	ModelID           int64  `json:"model_id"`
-	Params            JSON   `gorm:"type:json" json:"params"`
-	Status            int8   `gorm:"default:1" json:"status"`
-	GeneratedInRunID  int64  `gorm:"column:generated_in_run_id" json:"generated_in_run_id"`
-	CreatedBy         int64  `json:"created_by"`
+	ProjectID        int64  `gorm:"index" json:"project_id"`
+	StoryboardID     int64  `gorm:"index" json:"storyboard_id"`
+	SrcType          string `gorm:"size:16;default:generated" json:"src_type"`
+	URL              string `gorm:"size:512" json:"url"`
+	ThumbURL         string `gorm:"size:512" json:"thumb_url"`
+	Width            int    `json:"width"`
+	Height           int    `json:"height"`
+	Prompt           string `gorm:"type:text" json:"prompt"`
+	NegPrompt        string `gorm:"type:text;column:neg_prompt" json:"neg_prompt"`
+	ModelID          int64  `json:"model_id"`
+	Params           JSON   `gorm:"type:json" json:"params"`
+	Status           int8   `gorm:"default:1;index" json:"status"`
+	GeneratedInRunID int64  `gorm:"column:generated_in_run_id" json:"generated_in_run_id"`
+	CreatedBy        int64  `json:"created_by"`
 }
 
 func (Image) TableName() string { return "images" }
@@ -205,7 +205,7 @@ type ShortVideo struct {
 	SubtitleURL      string `gorm:"size:512" json:"subtitle_url"`
 	ModelID          int64  `json:"model_id"`
 	Params           JSON   `gorm:"type:json" json:"params"`
-	Status           string `gorm:"size:16;default:queued" json:"status"`
+	Status           string `gorm:"size:16;default:queued;index" json:"status"`
 	ErrorMsg         string `gorm:"size:512" json:"error_msg"`
 	RetryCount       int    `json:"retry_count"`
 	GeneratedInRunID int64  `gorm:"column:generated_in_run_id" json:"generated_in_run_id"`
@@ -227,7 +227,7 @@ type FullVideo struct {
 	ThumbURL       string `gorm:"size:512" json:"thumb_url"`
 	CoverURL       string `gorm:"size:512" json:"cover_url"`
 	DurationMs     int    `json:"duration_ms"`
-	Status         string `gorm:"size:16;default:draft" json:"status"`
+	Status         string `gorm:"size:16;default:draft;index" json:"status"`
 	RenderProgress int    `json:"render_progress"`
 	ErrorMsg       string `gorm:"size:512" json:"error_msg"`
 }
@@ -248,14 +248,14 @@ type ReviewFlow struct {
 func (ReviewFlow) TableName() string { return "review_flows" }
 
 type ReviewNode struct {
-	ID                int64  `gorm:"primaryKey" json:"id"`
-	FlowID            int64  `gorm:"index" json:"flow_id"`
-	StepNo            int    `json:"step_no"`
-	Name              string `gorm:"size:64" json:"name"`
-	ApproverType      string `gorm:"size:16" json:"approver_type"`
-	ApproverValue     string `gorm:"size:64" json:"approver_value"`
-	AllowTimeoutPass  int8   `gorm:"column:allow_timeout_pass" json:"allow_timeout_pass"`
-	TimeoutHours      int    `gorm:"column:timeout_hours" json:"timeout_hours"`
+	ID               int64  `gorm:"primaryKey" json:"id"`
+	FlowID           int64  `gorm:"index" json:"flow_id"`
+	StepNo           int    `json:"step_no"`
+	Name             string `gorm:"size:64" json:"name"`
+	ApproverType     string `gorm:"size:16" json:"approver_type"`
+	ApproverValue    string `gorm:"size:64" json:"approver_value"`
+	AllowTimeoutPass int8   `gorm:"column:allow_timeout_pass" json:"allow_timeout_pass"`
+	TimeoutHours     int    `gorm:"column:timeout_hours" json:"timeout_hours"`
 }
 
 func (ReviewNode) TableName() string { return "review_nodes" }
@@ -292,7 +292,7 @@ type Publish struct {
 	FullVideoID     int64     `gorm:"uniqueIndex;column:full_video_id" json:"full_video_id"`
 	PublishedBy     int64     `json:"published_by"`
 	PublishedAt     time.Time `json:"published_at"`
-	Status          string    `gorm:"size:8;default:on" json:"status"`
+	Status          string    `gorm:"size:8;default:on;index" json:"status"`
 	WatermarkConfig JSON      `gorm:"type:json" json:"watermark_config"`
 	DownloadCount   int       `json:"download_count"`
 	PlayCount       int       `json:"play_count"`
@@ -331,7 +331,7 @@ type ModelInvocation struct {
 	Cost         float64    `gorm:"type:decimal(20,8)" json:"cost"`
 	Status       string     `gorm:"size:16;default:succeeded" json:"status"`
 	ErrorCode    string     `gorm:"size:32" json:"error_code"`
-	StartedAt    time.Time  `json:"started_at"`
+	StartedAt    time.Time  `gorm:"index" json:"started_at"`
 	EndedAt      *time.Time `json:"ended_at"`
 }
 
@@ -379,14 +379,14 @@ type AuditLog struct {
 	ID           int64     `gorm:"primaryKey" json:"id"`
 	UserID       int64     `gorm:"index" json:"user_id"`
 	Action       string    `gorm:"size:64" json:"action"`
-	ResourceType string    `gorm:"size:64" json:"resource_type"`
+	ResourceType string    `gorm:"size:64;index" json:"resource_type"`
 	ResourceID   string    `gorm:"size:64" json:"resource_id"`
 	Before       JSON      `gorm:"type:json" json:"before"`
 	After        JSON      `gorm:"type:json" json:"after"`
 	IP           string    `gorm:"size:64" json:"ip"`
 	UA           string    `gorm:"size:255" json:"ua"`
 	RequestID    string    `gorm:"size:64" json:"request_id"`
-	CreatedAt    time.Time `json:"created_at"`
+	CreatedAt    time.Time `gorm:"index" json:"created_at"`
 }
 
 func (AuditLog) TableName() string { return "audit_logs" }

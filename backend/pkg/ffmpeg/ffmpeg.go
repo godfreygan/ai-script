@@ -279,6 +279,9 @@ func escapeSubtitlePath(p string) string {
 	if len(s) >= 2 && s[1] == ':' {
 		s = string(s[0]) + `\:` + s[2:]
 	}
+	// 转义 ffmpeg filter 语法中的特殊字符:单引号 -> \', 反斜杠 -> \\
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "'", `\'`)
 	return "'" + s + "'"
 }
 

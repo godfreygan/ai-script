@@ -6,6 +6,7 @@ frontend/dist
 frontend/node_modules
 
 # Local config
+.env
 backend/configs/config.local.yaml
 deploy/.env
 
@@ -21,3 +22,8 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent worktrees / backups
+.claude/worktrees/
+*.bak
+*.bk

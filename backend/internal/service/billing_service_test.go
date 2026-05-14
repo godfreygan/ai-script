@@ -10,10 +10,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func newBillingService(t *testing.T) (*BillingService, *repo.Repositories) {
+func newBillingService(t *testing.T) (BillingService, *repo.Repositories) {
 	db := newTestDB(t, &model.BillingQuota{}, &model.BillingDaily{})
 	r := newTestRepos(db)
-	return &BillingService{r: r, log: zap.NewNop()}, r
+	return &billingService{r: r, log: zap.NewNop()}, r
 }
 
 // TestBillingService_RollupAggregate 覆盖 Rollup 的日聚合行为:
@@ -145,9 +145,10 @@ func TestBillingService_RollupDeductsQuota_ScopeSwitch(t *testing.T) {
 	}
 }
 
-// TestBillingService_RollupNilSafe nil receiver/nil params 不应 panic。
+// TestBillingService_RollupNilSafe nil params 不应 panic。
 func TestBillingService_RollupNilSafe(t *testing.T) {
-	var nilSvc *BillingService
+	// nil receiver on interface panics before method body; test concrete nil via *billingService
+	var nilSvc *billingService
 	if err := nilSvc.Rollup(context.Background(), &RollupParams{Date: time.Now()}); err != nil {
 		t.Errorf("nil svc rollup: %v", err)
 	}

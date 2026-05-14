@@ -1,0 +1,35 @@
+# Git & CI
+.git
+.github
+
+# Environment & Secrets
+.env
+.env.*
+
+# Documentation
+*.md
+docs/
+
+# IDE & Editor
+.vscode/
+.idea/
+.claude/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+frontend/.vite/
+
+# Backend Build Artifacts
+*.exe
+backend/bin/
+backend/vendor/
+
+# Test Files
+*_test.go
+*.test.*
+
+# OS
+.DS_Store
+Thumbs.db

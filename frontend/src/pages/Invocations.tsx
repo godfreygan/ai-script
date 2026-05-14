@@ -74,8 +74,9 @@ export default function InvocationsPage() {
       setProjects(p.list);
       setModels(m.list);
       setUsers(u.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch invocation refs failed:', err);
     }
   };
 
@@ -105,7 +106,9 @@ export default function InvocationsPage() {
       });
       setList(data.list);
       setTotal(data.total);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch invocations failed:', err);
       setList([]);
       setTotal(0);
     } finally {
@@ -117,7 +120,9 @@ export default function InvocationsPage() {
     try {
       const s = await invocationApi.stats(buildQuery());
       setStats(s);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch invocation stats failed:', err);
       setStats(null);
     }
   };

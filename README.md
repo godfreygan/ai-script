@@ -7,7 +7,7 @@
 | 层 | 组件 |
 |----|------|
 | 前端 | React 18 + TypeScript + Vite + Ant Design 5 + ReactFlow + Zustand |
-| 后端 | Go 1.22 + Gin + GORM + Casbin + Asynq + Zap |
+| 后端 | Go 1.24 + Gin + GORM + Casbin + Asynq + Zap |
 | 存储 | MySQL 8.0 + Redis 7 + 对象存储 (OSS/COS) |
 | 调度 | Asynq (Redis) |
 | 模型网关 | LiteLLM / One-API (OpenAI 兼容) |
@@ -25,12 +25,15 @@ ai-script/
 
 ## 快速开始（开发）
 
+> 本仓库有**两个 docker-compose**:根目录 `/docker-compose.yml`(开发) 与 `/deploy/docker-compose.yml`(生产)。配套 `.env` **不通用**,详见 [部署运维指南 §1.4](./docs/ops-guide.md#14-envexample-三个文件指引)。
+
 ```bash
-# 1. 启动依赖
-cd deploy && cp .env.example .env && docker-compose up -d mysql redis
+# 1. 只启动依赖(MySQL + Redis + MinIO),业务代码本地跑
+cp .env.example .env
+docker compose up -d mysql redis minio
 
 # 2. 后端
-cd ../backend
+cd backend
 go mod tidy
 make run            # 启动 HTTP server
 make worker         # 另起一个终端启动 worker
@@ -41,17 +44,26 @@ npm install
 npm run dev
 ```
 
-默认管理员账号：`admin` / `admin@123`（首次登录后请立即修改）。
+默认管理员账号:`admin` / `admin123`(首次登录后请立即修改)。
 
-## 一键部署
+## 一键部署(全容器)
+
+开发场景(根目录 compose):
+
+```bash
+cp .env.example .env       # 修改 JWT_SECRET / CRYPTO_KEY
+docker compose up -d --build
+```
+
+生产场景(deploy/ compose):
 
 ```bash
 cd deploy
-cp .env.example .env  # 修改 JWT_SECRET / CRYPTO_KEY_BASE64
-docker-compose up -d --build
+cp .env.example .env       # 修改 JWT_SECRET / CRYPTO_KEY_BASE64 / MYSQL_PASSWORD
+docker compose up -d --build
 ```
 
-访问 http://localhost/ 。
+访问 http://localhost/ 。完整四种部署方式(Docker / Linux 二进制 / Windows 二进制 / K8s)与 FAQ,见 [部署运维指南](./docs/ops-guide.md)。
 
 ## 文档索引
 

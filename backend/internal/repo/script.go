@@ -33,7 +33,10 @@ func (r *ScriptRepo) List(ctx context.Context, q *ListScriptsQuery) ([]model.Scr
 	}
 	page, size := pagination(q.Page, q.PageSize)
 	var list []model.Script
-	if err := tx.Order("id desc").Offset((page - 1) * size).Limit(size).Find(&list).Error; err != nil {
+	// 修复 P0 C4 — 列表页排除大字段 raw_text,减少 IO 与内存占用
+	if err := tx.Order("id desc").Offset((page-1)*size).Limit(size).
+		Select("id", "project_id", "name", "source_url", "current_version", "status", "meta", "created_at", "updated_at", "created_by", "updated_by").
+		Find(&list).Error; err != nil {
 		return nil, 0, err
 	}
 	return list, total, nil

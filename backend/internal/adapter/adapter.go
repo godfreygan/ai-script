@@ -20,7 +20,7 @@ const (
 type Request struct {
 	Prompt    string         `json:"prompt"`
 	NegPrompt string         `json:"neg_prompt"`
-	Inputs    []string       `json:"inputs"`  // 输入图片/音频 URL
+	Inputs    []string       `json:"inputs"` // 输入图片/音频 URL
 	Params    map[string]any `json:"params"`
 }
 

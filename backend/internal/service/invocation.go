@@ -7,10 +7,11 @@ import (
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
 	"go.uber.org/zap"
 )
 
-type InvocationService struct {
+type invocationService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
@@ -35,7 +36,7 @@ type LogParams struct {
 }
 
 // Log 写入一条调用日志。任何错误只记录日志,不阻塞主流程。
-func (s *InvocationService) Log(ctx context.Context, p *LogParams) {
+func (s *invocationService) Log(ctx context.Context, p *LogParams) {
 	if s == nil || s.r == nil {
 		return
 	}
@@ -68,11 +69,19 @@ func (s *InvocationService) Log(ctx context.Context, p *LogParams) {
 }
 
 // List 调用日志分页列表
-func (s *InvocationService) List(ctx context.Context, q *repo.ListInvocationsQuery) ([]model.ModelInvocation, int64, error) {
-	return s.r.Invocation.List(ctx, q)
+func (s *invocationService) List(ctx context.Context, q *repo.ListInvocationsQuery) ([]model.ModelInvocation, int64, error) {
+	list, total, err := s.r.Invocation.List(ctx, q)
+	if err != nil {
+		return nil, 0, errcode.ErrInternal.Wrap(err)
+	}
+	return list, total, nil
 }
 
 // Stats 调用日志聚合统计
-func (s *InvocationService) Stats(ctx context.Context, q *repo.ListInvocationsQuery) (*repo.InvocationStats, error) {
-	return s.r.Invocation.StatsAll(ctx, q)
+func (s *invocationService) Stats(ctx context.Context, q *repo.ListInvocationsQuery) (*repo.InvocationStats, error) {
+	stats, err := s.r.Invocation.StatsAll(ctx, q)
+	if err != nil {
+		return nil, errcode.ErrInternal.Wrap(err)
+	}
+	return stats, nil
 }

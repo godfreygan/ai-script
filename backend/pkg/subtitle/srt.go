@@ -12,11 +12,11 @@ import (
 
 // Cue 字幕条目
 type Cue struct {
-	Index    int           // 1-based 序号
-	Start    time.Duration // 相对视频起点的开始时间
-	End      time.Duration // 相对视频起点的结束时间
-	Text     string        // 字幕文本(可含换行,会被压缩为 max 2 行)
-	Speaker  string        // 可选:角色名;若存在会显示为 "<speaker>: <text>"
+	Index   int           // 1-based 序号
+	Start   time.Duration // 相对视频起点的开始时间
+	End     time.Duration // 相对视频起点的结束时间
+	Text    string        // 字幕文本(可含换行,会被压缩为 max 2 行)
+	Speaker string        // 可选:角色名;若存在会显示为 "<speaker>: <text>"
 }
 
 // Builder 顺序追加字幕条目

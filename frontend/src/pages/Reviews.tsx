@@ -123,8 +123,9 @@ export default function ReviewsPage() {
       });
       setRecords(data.list || []);
       setRecordsTotal(data.total || 0);
-    } catch {
-      /* api 已 toast */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch review records failed:', err);
     } finally {
       setRecordsLoading(false);
     }
@@ -135,8 +136,9 @@ export default function ReviewsPage() {
     try {
       const data = await reviewApi.listFlows();
       setFlows(data || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch review flows failed:', err);
     } finally {
       setFlowsLoading(false);
     }
@@ -147,8 +149,9 @@ export default function ReviewsPage() {
     try {
       const nodes = await reviewApi.listNodes(flowId);
       setFlowNodesMap((prev) => ({ ...prev, [flowId]: nodes || [] }));
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch flow nodes failed:', err);
     } finally {
       setFlowNodesLoading((prev) => ({ ...prev, [flowId]: false }));
     }
@@ -158,8 +161,9 @@ export default function ReviewsPage() {
     try {
       const data = await fullVideoApi.list({ page_size: 200 });
       setVideos(data.list || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch full videos for review failed:', err);
     }
   };
 
@@ -208,8 +212,9 @@ export default function ReviewsPage() {
       ]);
       setDrawerActions(actions || []);
       setDrawerFlowNodes(nodes || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch review drawer data failed:', err);
     } finally {
       setDrawerLoading(false);
     }
@@ -225,8 +230,9 @@ export default function ReviewsPage() {
       ]);
       setDrawerRecord(rec);
       setDrawerActions(actions || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('refresh review drawer failed:', err);
     } finally {
       setDrawerLoading(false);
     }
@@ -245,8 +251,9 @@ export default function ReviewsPage() {
       setActComment('');
       await refreshDrawer();
       fetchRecords();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('review act failed:', err);
     } finally {
       setActing(false);
     }
@@ -260,8 +267,9 @@ export default function ReviewsPage() {
       message.success('已撤回');
       await refreshDrawer();
       fetchRecords();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('review cancel failed:', err);
     } finally {
       setActing(false);
     }
@@ -287,8 +295,9 @@ export default function ReviewsPage() {
       message.success('已提交审核');
       setSubmitOpen(false);
       fetchRecords();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('submit review failed:', err);
     } finally {
       setSubmitting(false);
     }

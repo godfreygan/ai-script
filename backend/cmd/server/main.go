@@ -21,6 +21,9 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("load config failed: %v", err))
 	}
+	if err := cfg.Validate(); err != nil {
+		panic(fmt.Sprintf("config validation failed: %v", err))
+	}
 
 	log, err := logger.New(cfg.App.LogLevel, cfg.App.Env)
 	if err != nil {
@@ -28,15 +31,13 @@ func main() {
 	}
 	defer log.Sync()
 
-	app, err := server.NewApp(cfg, log)
+	app, err := server.InitializeApp(cfg, log)
 	if err != nil {
 		log.Fatal("init app failed", zap.Error(err))
 	}
+	defer app.Close()
 
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.App.Port),
-		Handler: app.Router(),
-	}
+	srv := app.Server()
 
 	go func() {
 		log.Info("http server started", zap.Int("port", cfg.App.Port))

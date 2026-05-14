@@ -127,7 +127,16 @@ func (r *PublishRepo) Upsert(ctx context.Context, p *model.Publish) error {
 		err := tx.Where("full_video_id = ?", p.FullVideoID).First(&exist).Error
 		if err == nil {
 			p.ID = exist.ID
-			return tx.Save(p).Error
+			return tx.Model(&model.Publish{}).Where("id = ?", p.ID).
+				Updates(map[string]any{
+					"full_video_id":    p.FullVideoID,
+					"published_by":     p.PublishedBy,
+					"published_at":     p.PublishedAt,
+					"status":           p.Status,
+					"watermark_config": p.WatermarkConfig,
+					"download_count":   p.DownloadCount,
+					"play_count":       p.PlayCount,
+				}).Error
 		}
 		return tx.Create(p).Error
 	})

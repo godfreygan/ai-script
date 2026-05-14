@@ -154,8 +154,9 @@ export default function PublishPage() {
       });
       setList(data.list || []);
       setTotal(data.total || 0);
-    } catch {
-      /* api 已 toast */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch publish list failed:', err);
     } finally {
       setLoading(false);
     }
@@ -170,8 +171,9 @@ export default function PublishPage() {
         status: 'succeeded',
       });
       setFullVideoOptions(data.list || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch full videos for publish failed:', err);
     } finally {
       setFvLoading(false);
     }
@@ -214,8 +216,9 @@ export default function PublishPage() {
       message.success('已发布');
       setPublishOpen(false);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('publish failed:', err);
     }
   };
 
@@ -225,8 +228,9 @@ export default function PublishPage() {
       await publishApi.unpublish(item.full_video_id);
       message.success('已下架');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('unpublish failed:', err);
     }
   };
 
@@ -239,8 +243,9 @@ export default function PublishPage() {
       });
       message.success('已重新发布');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('republish failed:', err);
     }
   };
 
@@ -273,8 +278,9 @@ export default function PublishPage() {
       message.success('水印已更新');
       setWmOpen(false);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('update watermark failed:', err);
     }
   };
 
@@ -291,8 +297,9 @@ export default function PublishPage() {
       publishApi.incPlay(item.full_video_id).catch(() => {
         /* ignore */
       });
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch full video for preview failed:', err);
     } finally {
       setPreviewLoading(false);
     }
@@ -304,8 +311,9 @@ export default function PublishPage() {
       await publishApi.incDownload(previewItem.full_video_id);
       message.success('已记录下载');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('inc download failed:', err);
     }
   };
 

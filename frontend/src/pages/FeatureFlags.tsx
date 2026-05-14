@@ -74,7 +74,9 @@ export default function FeatureFlagsPage() {
     try {
       const data = await featureFlagApi.list();
       setList(data || []);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch feature flags failed:', err);
       setList([]);
     } finally {
       setLoading(false);
@@ -149,8 +151,9 @@ export default function FeatureFlagsPage() {
       }
       setEditOpen(false);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('save feature flag failed:', err);
     }
   };
 
@@ -159,8 +162,9 @@ export default function FeatureFlagsPage() {
       await featureFlagApi.delete(id);
       message.success('已删除');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete feature flag failed:', err);
     }
   };
 
@@ -169,8 +173,9 @@ export default function FeatureFlagsPage() {
       await featureFlagApi.update(record.id, { enabled: enabled ? 1 : 0 });
       message.success(enabled ? '已启用' : '已禁用');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('toggle feature flag failed:', err);
     }
   };
 
@@ -189,7 +194,9 @@ export default function FeatureFlagsPage() {
     try {
       const r = await featureFlagApi.evaluate(evalKey.trim());
       setEvalResult(r);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('evaluate feature flag failed:', err);
       setEvalResult(null);
     } finally {
       setEvalLoading(false);

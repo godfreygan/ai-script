@@ -1,0 +1,47 @@
+# 修复 P0 F5 — 减少 Docker build context,加速构建并避免敏感文件泄露
+
+# Git
+.git
+.gitignore
+
+# CI/CD
+.github
+
+# Documentation
+*.md
+docs/
+
+# Test artifacts
+*_test.go
+coverage.out
+coverage.html
+
+# Local configs (may contain secrets)
+configs/config.local.yaml
+.env
+.env.*
+
+# Build outputs
+out/
+bin/
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Vendor (we use go mod download)
+vendor/

@@ -13,29 +13,29 @@ import (
 	"gorm.io/gorm"
 )
 
-type UserService struct {
+type userService struct {
 	user *repo.UserRepo
 	role *repo.RoleRepo
 	log  *zap.Logger
 }
 
 type CreateUserInput struct {
-	Username string  `json:"username" binding:"required"`
-	Password string  `json:"password" binding:"required,min=6"`
-	Nickname string  `json:"nickname"`
-	Email    string  `json:"email"`
-	Phone    string  `json:"phone"`
-	DeptID   int64   `json:"dept_id"`
+	Username string  `json:"username" binding:"required,min=1,max=100"`
+	Password string  `json:"password" binding:"required,min=8,max=128"`
+	Nickname string  `json:"nickname" binding:"omitempty,min=1,max=100"`
+	Email    string  `json:"email" binding:"omitempty,email,max=200"`
+	Phone    string  `json:"phone" binding:"omitempty,max=20"`
+	DeptID   int64   `json:"dept_id" binding:"omitempty,gte=1"`
 	RoleIDs  []int64 `json:"role_ids"`
-	Status   int8    `json:"status"`
+	Status   int8    `json:"status" binding:"omitempty,gte=0,lte=1"`
 }
 
 type UpdateUserInput struct {
-	Nickname *string  `json:"nickname"`
-	Email    *string  `json:"email"`
-	Phone    *string  `json:"phone"`
-	DeptID   *int64   `json:"dept_id"`
-	Status   *int8    `json:"status"`
+	Nickname *string  `json:"nickname" binding:"omitempty,min=1,max=100"`
+	Email    *string  `json:"email" binding:"omitempty,email,max=200"`
+	Phone    *string  `json:"phone" binding:"omitempty,max=20"`
+	DeptID   *int64   `json:"dept_id" binding:"omitempty,gte=1"`
+	Status   *int8    `json:"status" binding:"omitempty,gte=0,lte=1"`
 	RoleIDs  *[]int64 `json:"role_ids"`
 }
 
@@ -48,7 +48,7 @@ func sanitizeUser(u *model.User) *model.User {
 	return u
 }
 
-func (s *UserService) Me(ctx context.Context, uid int64) (*model.User, error) {
+func (s *userService) Me(ctx context.Context, uid int64) (*model.User, error) {
 	u, err := s.user.GetByID(ctx, uid)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -64,7 +64,7 @@ type UserWithRoles struct {
 	Roles []int64 `json:"role_ids"`
 }
 
-func (s *UserService) List(ctx context.Context, q *repo.ListUsersQuery) ([]model.User, int64, error) {
+func (s *userService) List(ctx context.Context, q *repo.ListUsersQuery) ([]model.User, int64, error) {
 	list, total, err := s.user.List(ctx, q)
 	if err != nil {
 		return nil, 0, errcode.ErrInternal.Wrap(err)
@@ -75,7 +75,7 @@ func (s *UserService) List(ctx context.Context, q *repo.ListUsersQuery) ([]model
 	return list, total, nil
 }
 
-func (s *UserService) Get(ctx context.Context, id int64) (*UserWithRoles, error) {
+func (s *userService) Get(ctx context.Context, id int64) (*UserWithRoles, error) {
 	if id <= 0 {
 		return nil, errcode.ErrParam.WithMsg("invalid user id")
 	}
@@ -93,7 +93,7 @@ func (s *UserService) Get(ctx context.Context, id int64) (*UserWithRoles, error)
 	return &UserWithRoles{User: sanitizeUser(u), Roles: roles}, nil
 }
 
-func (s *UserService) Create(ctx context.Context, in *CreateUserInput) (*model.User, error) {
+func (s *userService) Create(ctx context.Context, in *CreateUserInput) (*model.User, error) {
 	if in == nil {
 		return nil, errcode.ErrParam
 	}
@@ -101,8 +101,8 @@ func (s *UserService) Create(ctx context.Context, in *CreateUserInput) (*model.U
 	if in.Username == "" {
 		return nil, errcode.ErrParam.WithMsg("username required")
 	}
-	if len(in.Password) < 6 {
-		return nil, errcode.ErrParam.WithMsg("password too short")
+	if err := ValidatePassword(in.Password, in.Username); err != nil {
+		return nil, err
 	}
 	// 用户名重复校验:必须区分 not found / 其它错误
 	exist, err := s.user.GetByUsername(ctx, in.Username)
@@ -112,7 +112,7 @@ func (s *UserService) Create(ctx context.Context, in *CreateUserInput) (*model.U
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), 12)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
@@ -140,7 +140,7 @@ func (s *UserService) Create(ctx context.Context, in *CreateUserInput) (*model.U
 	return sanitizeUser(u), nil
 }
 
-func (s *UserService) Update(ctx context.Context, id int64, in *UpdateUserInput) (*model.User, error) {
+func (s *userService) Update(ctx context.Context, id int64, in *UpdateUserInput) (*model.User, error) {
 	if id <= 0 || in == nil {
 		return nil, errcode.ErrParam
 	}
@@ -177,7 +177,7 @@ func (s *UserService) Update(ctx context.Context, id int64, in *UpdateUserInput)
 	return sanitizeUser(u), nil
 }
 
-func (s *UserService) Delete(ctx context.Context, id int64) error {
+func (s *userService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return errcode.ErrParam
 	}
@@ -185,19 +185,29 @@ func (s *UserService) Delete(ctx context.Context, id int64) error {
 		return errcode.ErrConflict.WithMsg("super admin cannot be deleted")
 	}
 	if err := s.user.Delete(ctx, id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.ErrNotFound
+		}
 		return errcode.ErrInternal.Wrap(err)
 	}
 	return nil
 }
 
-func (s *UserService) ResetPassword(ctx context.Context, id int64, newPw string) error {
+func (s *userService) ResetPassword(ctx context.Context, id int64, newPw string) error {
 	if id <= 0 {
 		return errcode.ErrParam
 	}
-	if len(newPw) < 6 {
-		return errcode.ErrParam.WithMsg("password too short")
+	u, err := s.user.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.ErrNotFound
+		}
+		return errcode.ErrInternal.Wrap(err)
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
+	if err := ValidatePassword(newPw, u.Username); err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), 12)
 	if err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}

@@ -3,41 +3,43 @@ package service
 import (
 	"context"
 
+	"encoding/json"
+
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
 	"go.uber.org/zap"
 )
 
-type ProjectService struct {
+type projectService struct {
 	project *repo.ProjectRepo
 	log     *zap.Logger
 }
 
 type CreateProjectInput struct {
-	Code              string   `json:"code" binding:"required"`
-	Name              string   `json:"name" binding:"required"`
-	Description       string   `json:"description"`
-	DeptID            int64    `json:"dept_id"`
-	DefaultPipelineID int64    `json:"default_pipeline_id"`
-	CoverURL          string   `json:"cover_url"`
+	Code              string   `json:"code" binding:"required,min=1,max=100"`
+	Name              string   `json:"name" binding:"required,min=1,max=100"`
+	Description       string   `json:"description" binding:"omitempty,max=500"`
+	DeptID            int64    `json:"dept_id" binding:"omitempty,gte=1"`
+	DefaultPipelineID int64    `json:"default_pipeline_id" binding:"omitempty,gte=1"`
+	CoverURL          string   `json:"cover_url" binding:"omitempty,max=500"`
 	Tags              []string `json:"tags"`
 }
 
 type UpdateProjectInput struct {
-	Name              *string  `json:"name"`
-	Description       *string  `json:"description"`
-	Status            *int8    `json:"status"`
-	DefaultPipelineID *int64   `json:"default_pipeline_id"`
-	CoverURL          *string  `json:"cover_url"`
+	Name              *string  `json:"name" binding:"omitempty,min=1,max=100"`
+	Description       *string  `json:"description" binding:"omitempty,max=500"`
+	Status            *int8    `json:"status" binding:"omitempty,gte=0,lte=1"`
+	DefaultPipelineID *int64   `json:"default_pipeline_id" binding:"omitempty,gte=1"`
+	CoverURL          *string  `json:"cover_url" binding:"omitempty,max=500"`
 	Tags              []string `json:"tags"`
 }
 
-func (s *ProjectService) List(ctx context.Context, q *repo.ListProjectsQuery) ([]model.Project, int64, error) {
+func (s *projectService) List(ctx context.Context, q *repo.ListProjectsQuery) ([]model.Project, int64, error) {
 	return s.project.List(ctx, q)
 }
 
-func (s *ProjectService) Create(ctx context.Context, in *CreateProjectInput, uid, deptID int64) (*model.Project, error) {
+func (s *projectService) Create(ctx context.Context, in *CreateProjectInput, uid, deptID int64) (*model.Project, error) {
 	if in.DeptID == 0 {
 		in.DeptID = deptID
 	}
@@ -51,6 +53,13 @@ func (s *ProjectService) Create(ctx context.Context, in *CreateProjectInput, uid
 		DefaultPipelineID: in.DefaultPipelineID,
 		CoverURL:          in.CoverURL,
 	}
+	if len(in.Tags) > 0 {
+		b, err := json.Marshal(in.Tags)
+		if err != nil {
+			return nil, errcode.ErrParam.Wrap(err)
+		}
+		p.Tags = model.JSON(b)
+	}
 	p.CreatedBy = uid
 	p.UpdatedBy = uid
 	if err := s.project.Create(ctx, p); err != nil {
@@ -59,7 +68,7 @@ func (s *ProjectService) Create(ctx context.Context, in *CreateProjectInput, uid
 	return p, nil
 }
 
-func (s *ProjectService) Get(ctx context.Context, id int64) (*model.Project, error) {
+func (s *projectService) Get(ctx context.Context, id int64) (*model.Project, error) {
 	p, err := s.project.GetByID(ctx, id)
 	if err != nil {
 		return nil, errcode.ErrNotFound
@@ -67,7 +76,7 @@ func (s *ProjectService) Get(ctx context.Context, id int64) (*model.Project, err
 	return p, nil
 }
 
-func (s *ProjectService) Update(ctx context.Context, id int64, in *UpdateProjectInput, uid int64) (*model.Project, error) {
+func (s *projectService) Update(ctx context.Context, id int64, in *UpdateProjectInput, uid int64) (*model.Project, error) {
 	p, err := s.project.GetByID(ctx, id)
 	if err != nil {
 		return nil, errcode.ErrNotFound
@@ -87,6 +96,13 @@ func (s *ProjectService) Update(ctx context.Context, id int64, in *UpdateProject
 	if in.CoverURL != nil {
 		p.CoverURL = *in.CoverURL
 	}
+	if in.Tags != nil {
+		b, err := json.Marshal(in.Tags)
+		if err != nil {
+			return nil, errcode.ErrParam.Wrap(err)
+		}
+		p.Tags = model.JSON(b)
+	}
 	p.UpdatedBy = uid
 	if err := s.project.Update(ctx, p); err != nil {
 		return nil, err
@@ -94,17 +110,17 @@ func (s *ProjectService) Update(ctx context.Context, id int64, in *UpdateProject
 	return p, nil
 }
 
-func (s *ProjectService) Delete(ctx context.Context, id int64) error {
+func (s *projectService) Delete(ctx context.Context, id int64) error {
 	return s.project.Delete(ctx, id)
 }
 
 // =============== 成员 ===============
 
-func (s *ProjectService) ListMembers(ctx context.Context, projectID int64) ([]model.ProjectMember, error) {
+func (s *projectService) ListMembers(ctx context.Context, projectID int64) ([]model.ProjectMember, error) {
 	return s.project.ListMembers(ctx, projectID)
 }
 
-func (s *ProjectService) AddMember(ctx context.Context, projectID, userID int64, roleInProject string) error {
+func (s *projectService) AddMember(ctx context.Context, projectID, userID int64, roleInProject string) error {
 	if projectID <= 0 || userID <= 0 {
 		return errcode.ErrParam
 	}
@@ -130,7 +146,7 @@ func (s *ProjectService) AddMember(ctx context.Context, projectID, userID int64,
 	})
 }
 
-func (s *ProjectService) RemoveMember(ctx context.Context, projectID, userID int64) error {
+func (s *projectService) RemoveMember(ctx context.Context, projectID, userID int64) error {
 	if projectID <= 0 || userID <= 0 {
 		return errcode.ErrParam
 	}

@@ -2,19 +2,37 @@ package repo
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-type RoleRepo struct{ db *gorm.DB }
+type RoleRepo struct {
+	db  *gorm.DB
+	rdb *redis.Client
+}
+
+// WithDB 返回基于指定 *gorm.DB 的临时 RoleRepo,用于事务内复用
+func (r *RoleRepo) WithDB(db *gorm.DB) *RoleRepo {
+	return &RoleRepo{db: db, rdb: r.rdb}
+}
+
+func (r *RoleRepo) WithRedis(rdb *redis.Client) *RoleRepo {
+	return &RoleRepo{db: r.db, rdb: rdb}
+}
 
 func (r *RoleRepo) List(ctx context.Context) ([]model.Role, error) {
-	var list []model.Role
-	if err := r.db.WithContext(ctx).Order("id").Find(&list).Error; err != nil {
-		return nil, err
+	loader := func(ctx context.Context) ([]model.Role, error) {
+		var list []model.Role
+		if err := r.db.WithContext(ctx).Order("id").Find(&list).Error; err != nil {
+			return nil, err
+		}
+		return list, nil
 	}
-	return list, nil
+	return Get(ctx, r.rdb, cacheKey("role", "list"), loader, 5*time.Minute)
 }
 
 func (r *RoleRepo) Get(ctx context.Context, id int64) (*model.Role, error) {
@@ -34,25 +52,34 @@ func (r *RoleRepo) GetByCode(ctx context.Context, code string) (*model.Role, err
 }
 
 func (r *RoleRepo) Create(ctx context.Context, role *model.Role) error {
-	return r.db.WithContext(ctx).Create(role).Error
+	if err := r.db.WithContext(ctx).Create(role).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("role", "list"))
+	return nil
 }
 
 func (r *RoleRepo) Update(ctx context.Context, role *model.Role) error {
 	// 修复 P0 #7 — 原 Save(role) 全字段写回。改 Updates(map) 只动显式字段;
 	// is_system 是建库后不应再改的标志,这里不允许通过 Update 修改,
 	// 防止 Save 把零值的 is_system 反写覆盖系统角色保护标记。
-	return r.db.WithContext(ctx).Model(&model.Role{}).Where("id = ?", role.ID).
+	if err := r.db.WithContext(ctx).Model(&model.Role{}).Where("id = ?", role.ID).
 		Updates(map[string]any{
 			"code":        role.Code,
 			"name":        role.Name,
 			"description": role.Description,
 			"data_scope":  role.DataScope,
 			"status":      role.Status,
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("role", "list"))
+	DeletePattern(ctx, r.rdb, "role:perm_codes:*")
+	return nil
 }
 
 func (r *RoleRepo) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role model.Role
 		if err := tx.First(&role, id).Error; err != nil {
 			return err
@@ -71,7 +98,12 @@ func (r *RoleRepo) Delete(ctx context.Context, id int64) error {
 			return err
 		}
 		return tx.Delete(&model.Role{}, id).Error
-	})
+	}); err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("role", "list"))
+	DeletePattern(ctx, r.rdb, "role:perm_codes:*")
+	return nil
 }
 
 func (r *RoleRepo) ListPermissions(ctx context.Context) ([]model.Permission, error) {
@@ -84,14 +116,17 @@ func (r *RoleRepo) ListPermissions(ctx context.Context) ([]model.Permission, err
 
 // GetRolePermissionCodes 拿到一个角色的权限 code 列表
 func (r *RoleRepo) GetRolePermissionCodes(ctx context.Context, roleID int64) ([]string, error) {
-	var codes []string
-	err := r.db.WithContext(ctx).
-		Table("role_permissions rp").
-		Select("p.code").
-		Joins("JOIN permissions p ON p.id = rp.permission_id").
-		Where("rp.role_id = ?", roleID).
-		Scan(&codes).Error
-	return codes, err
+	loader := func(ctx context.Context) ([]string, error) {
+		var codes []string
+		err := r.db.WithContext(ctx).
+			Table("role_permissions rp").
+			Select("p.code").
+			Joins("JOIN permissions p ON p.id = rp.permission_id").
+			Where("rp.role_id = ?", roleID).
+			Scan(&codes).Error
+		return codes, err
+	}
+	return Get(ctx, r.rdb, cacheKey("role", fmt.Sprintf("perm_codes:%d", roleID)), loader, 5*time.Minute)
 }
 
 // SetRolePermissions 替换角色的权限点(按 permission code)

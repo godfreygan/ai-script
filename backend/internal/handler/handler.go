@@ -3,6 +3,7 @@ package handler
 import (
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -31,7 +32,7 @@ type Handlers struct {
 	FeatureFlag *FeatureFlagHandler
 }
 
-func NewHandlers(s *service.Services, hub *ws.Hub, log *zap.Logger) *Handlers {
+func NewHandlers(s *service.Services, hub *ws.Hub, log *zap.Logger, rdb *redis.Client) *Handlers {
 	return &Handlers{
 		Auth:        &AuthHandler{auth: s.Auth, log: log},
 		User:        &UserHandler{user: s.User, auth: s.Auth, log: log},

@@ -52,7 +52,7 @@ func (r *ShortVideoRepo) Create(ctx context.Context, s *model.ShortVideo) error 
 }
 
 func (r *ShortVideoRepo) Update(ctx context.Context, s *model.ShortVideo) error {
-	return r.db.WithContext(ctx).Save(s).Error
+	return r.db.WithContext(ctx).Model(&model.ShortVideo{}).Select("*").Omit("created_at").Where("id = ?", s.ID).Updates(s).Error
 }
 
 func (r *ShortVideoRepo) UpdateStatus(ctx context.Context, id int64, status, errMsg string) error {

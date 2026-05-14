@@ -21,14 +21,14 @@ import (
 //   - 若同一 FullVideo 已有 status=on 的发布记录,拒绝重复发布(避免重置计数)
 //
 // (可选)若存在活跃的 ReviewRecord,其 Status 必须为 "approved"。
-type PublishService struct {
+type publishService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
 
 // PublishInput 发布入参
 type PublishInput struct {
-	FullVideoID     int64           `json:"full_video_id" binding:"required"`
+	FullVideoID     int64           `json:"full_video_id" binding:"required,gte=1"`
 	WatermarkConfig json.RawMessage `json:"watermark_config"`
 }
 
@@ -54,7 +54,7 @@ func validateJSONObject(raw json.RawMessage) error {
 //  2. 不存在 status=on 的活跃发布(避免重复发布、重置 play/download 计数)
 //  3. 若存在 active 审核记录,需 approved
 //  4. WatermarkConfig 若传则必须是合法 JSON object
-func (s *PublishService) Publish(ctx context.Context, in *PublishInput, uid int64) (*model.Publish, error) {
+func (s *publishService) Publish(ctx context.Context, in *PublishInput, uid int64) (*model.Publish, error) {
 	if in == nil || in.FullVideoID <= 0 {
 		return nil, errcode.ErrParam.WithMsg("full_video_id 必填")
 	}
@@ -98,7 +98,7 @@ func (s *PublishService) Publish(ctx context.Context, in *PublishInput, uid int6
 }
 
 // Unpublish 下架某 FullVideoID 对应的发布记录(Status -> off,不做物理删除,保留历史计数)。
-func (s *PublishService) Unpublish(ctx context.Context, videoID int64) error {
+func (s *publishService) Unpublish(ctx context.Context, videoID int64) error {
 	p, err := s.r.Publish.GetByVideoID(ctx, videoID)
 	if err != nil || p == nil {
 		return errcode.ErrNotFound
@@ -110,7 +110,7 @@ func (s *PublishService) Unpublish(ctx context.Context, videoID int64) error {
 }
 
 // Get 查询某 FullVideoID 的发布记录;不存在时返回 ErrNotFound。
-func (s *PublishService) Get(ctx context.Context, videoID int64) (*model.Publish, error) {
+func (s *publishService) Get(ctx context.Context, videoID int64) (*model.Publish, error) {
 	p, err := s.r.Publish.GetByVideoID(ctx, videoID)
 	if err != nil || p == nil {
 		return nil, errcode.ErrNotFound
@@ -120,7 +120,7 @@ func (s *PublishService) Get(ctx context.Context, videoID int64) (*model.Publish
 
 // List 列出发布记录(可按 status 过滤,分页)。
 // status 仅接受 "on" / "off" / "" (全部);其他值视为参数错误。
-func (s *PublishService) List(ctx context.Context, status string, page, size int) ([]model.Publish, int64, error) {
+func (s *publishService) List(ctx context.Context, status string, page, size int) ([]model.Publish, int64, error) {
 	if status != "" && status != "on" && status != "off" {
 		return nil, 0, errcode.ErrParam.WithMsg("status 仅支持 on/off")
 	}
@@ -128,7 +128,7 @@ func (s *PublishService) List(ctx context.Context, status string, page, size int
 }
 
 // IncPlay 播放计数 +1(原子自增,不做先读再写)。
-func (s *PublishService) IncPlay(ctx context.Context, videoID int64) error {
+func (s *publishService) IncPlay(ctx context.Context, videoID int64) error {
 	p, err := s.r.Publish.GetByVideoID(ctx, videoID)
 	if err != nil || p == nil {
 		return errcode.ErrNotFound
@@ -140,7 +140,7 @@ func (s *PublishService) IncPlay(ctx context.Context, videoID int64) error {
 }
 
 // IncDownload 下载计数 +1(原子自增)。
-func (s *PublishService) IncDownload(ctx context.Context, videoID int64) error {
+func (s *publishService) IncDownload(ctx context.Context, videoID int64) error {
 	p, err := s.r.Publish.GetByVideoID(ctx, videoID)
 	if err != nil || p == nil {
 		return errcode.ErrNotFound
@@ -153,7 +153,7 @@ func (s *PublishService) IncDownload(ctx context.Context, videoID int64) error {
 
 // UpdateWatermark 更新水印配置(JSON object)。
 // 仅接受合法 JSON object,空 / 数组 / 字面量 / null 一律拒绝。
-func (s *PublishService) UpdateWatermark(ctx context.Context, videoID int64, raw json.RawMessage) (*model.Publish, error) {
+func (s *publishService) UpdateWatermark(ctx context.Context, videoID int64, raw json.RawMessage) (*model.Publish, error) {
 	if len(raw) == 0 {
 		return nil, errcode.ErrParam.WithMsg("watermark_config 不能为空")
 	}

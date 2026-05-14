@@ -80,8 +80,9 @@ export default function ImagesPage() {
       ]);
       setProjects(p.list);
       setModels(m.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch image refs failed:', err);
     }
   };
 
@@ -89,7 +90,9 @@ export default function ImagesPage() {
     try {
       const data = await styleApi.list(pid);
       setStyles(data);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch styles failed:', err);
       setStyles([]);
     }
   };
@@ -105,7 +108,9 @@ export default function ImagesPage() {
       });
       setList(data.list);
       setTotal(data.total);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch images failed:', err);
       setList([]);
       setTotal(0);
     } finally {
@@ -152,8 +157,9 @@ export default function ImagesPage() {
       });
       setGenTopic(r.topic);
       message.success(`已入队任务 ${r.task_id}`);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('generate image failed:', err);
     }
   };
 
@@ -162,8 +168,9 @@ export default function ImagesPage() {
       await imageApi.delete(id);
       message.success('已删除');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete image failed:', err);
     }
   };
 

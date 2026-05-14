@@ -1,0 +1,139 @@
+# AI-Script Backend — golangci-lint 配置
+# 要求: golangci-lint >= v1.55
+
+run:
+  timeout: 5m
+  go: "1.22"
+  issues-exit-code: 1
+  tests: true
+  build-tags: []
+  skip-dirs: []
+  skip-files: []
+  allow-parallel-runners: true
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  uniq-by-line: true
+  sort-results: true
+
+linters:
+  disable-all: true
+  enable:
+    # 基础静态检查（官方推荐）
+    - errcheck      # 检查未处理的 error
+    - gosimple      # 简化代码建议
+    - govet         # Go vet 增强版
+    - ineffassign   # 检测无效赋值
+    - staticcheck   # 静态分析（含 SA/SAF/ST 系列）
+    - unused        # 检测未使用的变量/函数/类型
+
+    # 代码风格与格式化
+    - gocritic      # 代码审查建议（性能/风格/可疑）
+    - gofmt         # 标准 gofmt 格式检查
+    - gofumpt       # 更严格的 gofmt（stricter）
+    - gci           # import 分组排序
+
+    # 拼写与命名
+    - misspell      # 英文拼写检查
+    - revive        # golint 替代品，命名/注释/规范检查
+
+    # 资源与生命周期
+    - bodyclose     # 检查 HTTP response body 是否关闭
+    - noctx         # 检查 HTTP 请求是否传递 context
+    - sqlclosecheck # 检查 sql.Rows/sql.Stmt 是否关闭
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - (*os.File).Close
+      - (io.Closer).Close
+
+  govet:
+    enable-all: true
+
+  staticcheck:
+    checks: ["all"]
+
+  gocritic:
+    enabled-tags:
+      - performance
+      - style
+      - experimental
+    disabled-checks:
+      - wrapperFunc
+      - dupImport
+
+  gofumpt:
+    extra-rules: true
+
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(git.myscrm.cn/ganqx01/ai-script)
+      - blank
+      - dot
+    custom-order: true
+
+  misspell:
+    locale: US
+
+  revive:
+    ignore-generated-header: true
+    severity: warning
+    confidence: 0.8
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+
+  noctx:
+    # 默认检查 net/http.NewRequest 等
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # 测试文件允许部分宽松规则
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+        - noctx
+    # 生成代码/第三方适配层可放宽
+    - path: internal/repo/
+      linters:
+        - revive
+      text: "exported"
+    # 允许 main 函数中的 os.Exit
+    - path: cmd/
+      linters:
+        - revive
+      text: "deep-exit"

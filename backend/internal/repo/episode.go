@@ -36,7 +36,7 @@ func (r *EpisodeRepo) BulkCreate(ctx context.Context, list []model.Episode) erro
 }
 
 func (r *EpisodeRepo) Update(ctx context.Context, e *model.Episode) error {
-	return r.db.WithContext(ctx).Save(e).Error
+	return r.db.WithContext(ctx).Model(&model.Episode{}).Select("*").Omit("created_at").Where("id = ?", e.ID).Updates(e).Error
 }
 
 func (r *EpisodeRepo) Delete(ctx context.Context, id int64) error {

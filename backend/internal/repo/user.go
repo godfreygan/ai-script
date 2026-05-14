@@ -63,7 +63,14 @@ func (r *UserRepo) UpdateLastLogin(ctx context.Context, id int64, ip string) err
 }
 
 func (r *UserRepo) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&model.User{}, id).Error
+	result := r.db.WithContext(ctx).Delete(&model.User{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *UserRepo) List(ctx context.Context, q *ListUsersQuery) ([]model.User, int64, error) {
@@ -134,6 +141,12 @@ func pagination(page, size int) (int, int) {
 	}
 	if size > 200 {
 		size = 200
+	}
+	// 修复 P0 C2 — 限制最大 OFFSET,防止超大偏移量拖垮 DB
+	const maxOffsetRows = 10000
+	maxPage := maxOffsetRows/size + 1
+	if page > maxPage {
+		page = maxPage
 	}
 	return page, size
 }

@@ -3,7 +3,7 @@
 > 版本：v1.0
 > 日期：2026-05-12
 > 仓库：`git.myscrm.cn/ganqx01/ai-script/backend`
-> 语言：Go 1.22
+> 语言：Go 1.24
 >
 > 说明：本文档由 `architecture.md` + `database-design.md` + `api-design.md`(通用约定部分) 合并而成。
 

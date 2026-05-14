@@ -20,6 +20,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/metrics"
 )
 
 // DefaultRedisChannel 跨进程事件桥接默认 Redis 通道。
@@ -37,10 +39,12 @@ type Event struct {
 
 // Client 单条 WS 连接 + 订阅的 topic
 type Client struct {
-	hub   *Hub
-	conn  *websocket.Conn
-	topic string
-	send  chan Event
+	hub      *Hub
+	conn     *websocket.Conn
+	topic    string
+	send     chan Event
+	lastPong time.Time
+	mu       sync.Mutex
 }
 
 // Hub 管理所有 client + topic 路由
@@ -60,17 +64,33 @@ type Hub struct {
 	channel string
 }
 
-func NewHub(log *zap.Logger) *Hub {
+func NewHub(log *zap.Logger, allowedOrigins []string) *Hub {
+	// 修复 P0 A4 — WebSocket CheckOrigin 不再无条件放行
+	checkOrigin := func(r *http.Request) bool {
+		if len(allowedOrigins) == 0 {
+			return true
+		}
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = r.Header.Get("Referer")
+		}
+		for _, o := range allowedOrigins {
+			if o == "*" || o == origin {
+				return true
+			}
+		}
+		return false
+	}
 	return &Hub{
 		clients:    make(map[string]map[*Client]struct{}),
 		register:   make(chan *Client, 64),
 		unregister: make(chan *Client, 64),
-		broadcast:  make(chan Event, 256),
+		broadcast:  make(chan Event, 4096),
 		log:        log,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			CheckOrigin:     checkOrigin,
 		},
 	}
 }
@@ -109,6 +129,7 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 			h.clients[c.topic][c] = struct{}{}
 			h.mu.Unlock()
+			metrics.ActiveWSConnections.Add(1)
 		case c := <-h.unregister:
 			h.mu.Lock()
 			if set, ok := h.clients[c.topic]; ok {
@@ -121,6 +142,7 @@ func (h *Hub) Run(ctx context.Context) {
 				}
 			}
 			h.mu.Unlock()
+			metrics.ActiveWSConnections.Add(-1)
 		case ev := <-h.broadcast:
 			h.mu.RLock()
 			set := h.clients[ev.Topic]
@@ -133,10 +155,19 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 			h.mu.RUnlock()
 		case <-ticker.C:
-			// keepalive ping
+			// keepalive ping + 检测超时未 pong 的连接
+			now := time.Now()
 			h.mu.RLock()
 			for _, set := range h.clients {
 				for c := range set {
+					c.mu.Lock()
+					lastPong := c.lastPong
+					c.mu.Unlock()
+					if !lastPong.IsZero() && now.Sub(lastPong) > pongWait {
+						// 超时未收到 pong，关闭连接（由 readPump/writePump 清理）
+						_ = c.conn.Close()
+						continue
+					}
 					_ = c.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second))
 				}
 			}
@@ -152,6 +183,15 @@ func (h *Hub) Publish(topic string, ev Event) {
 	if ev.Time == 0 {
 		ev.Time = time.Now().Unix()
 	}
+	// 无论是否绑定 Redis,都先走本地 broadcast,确保本进程订阅者能立即收到
+	select {
+	case h.broadcast <- ev:
+	default:
+		if h.log != nil {
+			h.log.Warn("ws broadcast queue full, dropping event", zap.String("topic", topic))
+		}
+	}
+	// 若绑定了 Redis,再发布到 Redis 通道供跨进程消费
 	if h.rdb != nil {
 		buf, err := json.Marshal(ev)
 		if err == nil {
@@ -160,14 +200,6 @@ func (h *Hub) Publish(topic string, ev Event) {
 			if err := h.rdb.Publish(ctx, h.channel, buf).Err(); err != nil && h.log != nil {
 				h.log.Warn("ws redis publish failed", zap.String("topic", topic), zap.Error(err))
 			}
-		}
-		return
-	}
-	select {
-	case h.broadcast <- ev:
-	default:
-		if h.log != nil {
-			h.log.Warn("ws broadcast queue full, dropping event", zap.String("topic", topic))
 		}
 	}
 }
@@ -211,10 +243,11 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, topic string) erro
 		return err
 	}
 	c := &Client{
-		hub:   h,
-		conn:  conn,
-		topic: topic,
-		send:  make(chan Event, 32),
+		hub:      h,
+		conn:     conn,
+		topic:    topic,
+		send:     make(chan Event, 32),
+		lastPong: time.Now(),
 	}
 	h.register <- c
 	go c.writePump()
@@ -252,6 +285,9 @@ func (c *Client) readPump() {
 	c.conn.SetReadLimit(maxMsgSize)
 	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
+		c.mu.Lock()
+		c.lastPong = time.Now()
+		c.mu.Unlock()
 		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 	for {

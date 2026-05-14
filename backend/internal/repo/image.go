@@ -52,7 +52,7 @@ func (r *ImageRepo) Create(ctx context.Context, img *model.Image) error {
 }
 
 func (r *ImageRepo) Update(ctx context.Context, img *model.Image) error {
-	return r.db.WithContext(ctx).Save(img).Error
+	return r.db.WithContext(ctx).Model(&model.Image{}).Select("*").Omit("created_at").Where("id = ?", img.ID).Updates(img).Error
 }
 
 func (r *ImageRepo) Delete(ctx context.Context, id int64) error {

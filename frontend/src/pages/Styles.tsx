@@ -57,8 +57,9 @@ export default function StylesPage() {
     try {
       const p = await projectApi.list({ page_size: 200 });
       setProjects(p.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch projects for styles failed:', err);
     }
   };
 
@@ -67,7 +68,9 @@ export default function StylesPage() {
     try {
       const data = await styleApi.list(projectId);
       setList(data);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch styles failed:', err);
       setList([]);
     } finally {
       setLoading(false);
@@ -143,8 +146,9 @@ export default function StylesPage() {
       }
       setEditOpen(false);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('save style failed:', err);
     }
   };
 
@@ -153,8 +157,9 @@ export default function StylesPage() {
       await styleApi.delete(id);
       message.success('已删除');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete style failed:', err);
     }
   };
 

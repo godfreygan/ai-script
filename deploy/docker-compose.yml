@@ -1,15 +1,21 @@
 version: "3.9"
 
+# ai-script production deployment stack
+# Usage:
+#   cd deploy
+#   cp .env.example .env
+#   docker compose -f docker-compose.yml up -d
+
 services:
   mysql:
     image: mysql:8.0
     container_name: ai-script-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_script}
-      MYSQL_USER: ${MYSQL_USER:-ai_script}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ai_script123}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
@@ -19,27 +25,94 @@ services:
       - mysql_data:/var/lib/mysql
       - ../scripts/sql:/docker-entrypoint-initdb.d:ro
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - db-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   redis:
     image: redis:7-alpine
     container_name: ai-script-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - db-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: ai-script-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - db-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
   backend:
     build:
@@ -48,35 +121,136 @@ services:
     image: ai-script-backend:dev
     container_name: ai-script-backend
     restart: unless-stopped
-    environment:
-      APP_ENV: ${APP_ENV:-prod}
-      APP_PORT: "8080"
-      MYSQL_DSN: ${MYSQL_USER:-ai_script}:${MYSQL_PASSWORD:-ai_script123}@tcp(mysql:3306)/${MYSQL_DATABASE:-ai_script}?charset=utf8mb4&parseTime=true&loc=Local
-      REDIS_ADDR: redis:6379
-      JWT_SECRET: ${JWT_SECRET:-please-change-me-in-prod}
-      CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:-Z3JhZGUtMzItYnl0ZS1leGFtcGxlLWtleS1iYXNlNjQtcGxlYXNlLWNoYW5nZQ==}
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      APP_PORT: "8080"
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
+      CONFIG_FILE: ${CONFIG_FILE:-/app/configs/config.yaml}
+      MYSQL_DSN: ${MYSQL_USER:?MYSQL_USER is required}:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@tcp(mysql:3306)/${MYSQL_DATABASE:?MYSQL_DATABASE is required}?charset=utf8mb4&parseTime=true&loc=Local
+      MYSQL_MAX_IDLE: ${MYSQL_MAX_IDLE:-10}
+      MYSQL_MAX_OPEN: ${MYSQL_MAX_OPEN:-100}
+      MYSQL_CONN_MAX_LIFETIME: ${MYSQL_CONN_MAX_LIFETIME:-3600}
+      MYSQL_CONN_MAX_IDLE_TIME: ${MYSQL_CONN_MAX_IDLE_TIME:-1800}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
+      REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
+      REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-5}
+      OSS_PROVIDER: ${OSS_PROVIDER:-minio}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-http://minio:9000}
+      OSS_REGION: ${OSS_REGION:-us-east-1}
+      OSS_BUCKET: ${OSS_BUCKET:-ai-script}
+      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:?OSS_ACCESS_KEY is required}
+      OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7200}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-604800}
+      CRYPTO_KEY: ${CRYPTO_KEY:-}
+      CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:?CRYPTO_KEY_BASE64 is required}
+      MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
+      MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
     ports:
       - "8080:8080"
+    volumes:
+      - ../backend/configs:/app/configs:ro
+      - /tmp
     command: ["/app/server"]
+    read_only: true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - db-net
+      - app-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
 
   worker:
     image: ai-script-backend:dev
     container_name: ai-script-worker
     restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV:-prod}
-      MYSQL_DSN: ${MYSQL_USER:-ai_script}:${MYSQL_PASSWORD:-ai_script123}@tcp(mysql:3306)/${MYSQL_DATABASE:-ai_script}?charset=utf8mb4&parseTime=true&loc=Local
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
+      CONFIG_FILE: ${CONFIG_FILE:-/app/configs/config.yaml}
+      MYSQL_DSN: ${MYSQL_USER:?MYSQL_USER is required}:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@tcp(mysql:3306)/${MYSQL_DATABASE:?MYSQL_DATABASE is required}?charset=utf8mb4&parseTime=true&loc=Local
+      MYSQL_MAX_IDLE: ${MYSQL_MAX_IDLE:-10}
+      MYSQL_MAX_OPEN: ${MYSQL_MAX_OPEN:-100}
+      MYSQL_CONN_MAX_LIFETIME: ${MYSQL_CONN_MAX_LIFETIME:-3600}
+      MYSQL_CONN_MAX_IDLE_TIME: ${MYSQL_CONN_MAX_IDLE_TIME:-1800}
       REDIS_ADDR: redis:6379
-      CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:-Z3JhZGUtMzItYnl0ZS1leGFtcGxlLWtleS1iYXNlNjQtcGxlYXNlLWNoYW5nZQ==}
-    depends_on:
-      backend:
-        condition: service_started
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
+      REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
+      REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-5}
+      OSS_PROVIDER: ${OSS_PROVIDER:-minio}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-http://minio:9000}
+      OSS_REGION: ${OSS_REGION:-us-east-1}
+      OSS_BUCKET: ${OSS_BUCKET:-ai-script}
+      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:?OSS_ACCESS_KEY is required}
+      OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CRYPTO_KEY: ${CRYPTO_KEY:-}
+      CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:?CRYPTO_KEY_BASE64 is required}
+      MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
+      MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
+    volumes:
+      - ../backend/configs:/app/configs:ro
+      - /tmp
     command: ["/app/worker"]
+    read_only: true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - db-net
+      - app-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
 
   frontend:
     build:
@@ -86,10 +260,37 @@ services:
     container_name: ai-script-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "80:80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
 volumes:
   mysql_data:
+    driver: local
   redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  db-net:
+    driver: bridge
+    internal: false
+  app-net:
+    driver: bridge

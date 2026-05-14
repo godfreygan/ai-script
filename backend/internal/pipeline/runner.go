@@ -13,6 +13,7 @@ import (
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 )
 
 // DAG 定义
@@ -81,16 +82,49 @@ func (r *NodeHandlerRegistry) Get(nodeType string) (NodeHandler, bool) {
 	return h, ok
 }
 
-// Runner 真正的 DAG 执行器
-type Runner struct {
-	nodeReg *NodeHandlerRegistry
-	repos   *repo.Repositories
-	hub     *ws.Hub
-	log     *zap.Logger
+// RunnerOption 是 Runner 的可选配置函数
+type RunnerOption func(*Runner)
+
+// WithMaxConcurrency 设置同层最大并发数（默认 10）
+func WithMaxConcurrency(n int) RunnerOption {
+	return func(r *Runner) {
+		if n > 0 {
+			r.maxConcurrency = n
+		}
+	}
 }
 
-func NewRunner(reg *NodeHandlerRegistry, repos *repo.Repositories, hub *ws.Hub, log *zap.Logger) *Runner {
-	return &Runner{nodeReg: reg, repos: repos, hub: hub, log: log}
+// Runner 真正的 DAG 执行器
+type Runner struct {
+	nodeReg        *NodeHandlerRegistry
+	repos          *repo.Repositories
+	hub            *ws.Hub
+	log            *zap.Logger
+	maxConcurrency int
+	maxAttempts    int // 默认 3,可配置
+}
+
+func NewRunner(reg *NodeHandlerRegistry, repos *repo.Repositories, hub *ws.Hub, log *zap.Logger, opts ...RunnerOption) *Runner {
+	r := &Runner{
+		nodeReg:        reg,
+		repos:          repos,
+		hub:            hub,
+		log:            log,
+		maxConcurrency: 10,
+		maxAttempts:    3,
+	}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
+}
+
+// SetMaxAttempts 设置节点最大重试次数(含首次执行),默认 3。
+func (r *Runner) SetMaxAttempts(n int) {
+	if n < 1 {
+		n = 1
+	}
+	r.maxAttempts = n
 }
 
 // publishToRun 发布到 pipeline:<runID> 主题
@@ -186,13 +220,14 @@ func (r *Runner) Execute(ctx context.Context, dagJSON []byte, input map[string]a
 
 	r.publishToRun(runID, "progress", 0.01, fmt.Sprintf("start dag: %d 节点 / %d 层", totalNodes, len(layers)))
 
-	// 4) 按层执行,同层并行
+	// 4) 按层执行,同层并行（受 maxConcurrency 限制）
 	for li, layer := range layers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		var wg sync.WaitGroup
 		errCh := make(chan error, len(layer))
+		sem := semaphore.NewWeighted(int64(r.maxConcurrency))
 		for _, nodeID := range layer {
 			nodeID := nodeID
 			node := idx[nodeID]
@@ -249,24 +284,56 @@ func (r *Runner) Execute(ctx context.Context, dagJSON []byte, input map[string]a
 				r.log.Warn("create step run failed", zap.Error(err))
 			}
 
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				r.publishStep(runID, nodeID, "progress", 0, "start")
-				nc := &NodeContext{
-					Ctx:      ctx,
-					RunID:    runID,
-					NodeID:   node.ID,
-					NodeType: node.Type,
-					ModelID:  node.ModelID,
-					Params:   node.Params,
-					Input:    nodeInput,
-					Logger:   r.log,
-					Publisher: func(pct float64, msg string) {
-						r.publishStep(runID, nodeID, "progress", pct, msg)
-					},
+				defer sem.Release(1)
+				defer func() {
+					if rec := recover(); rec != nil {
+						r.log.Error("node handler panic",
+							zap.Int64("run_id", runID),
+							zap.String("node_id", nodeID),
+							zap.Any("panic", rec),
+						)
+						step.Status = "failed"
+						step.ErrorMsg = fmt.Sprintf("panic: %v", rec)
+						_ = r.repos.Pipeline.UpdateStep(ctx, step)
+						r.publishStep(runID, nodeID, "error", 0, fmt.Sprintf("panic: %v", rec))
+						errCh <- fmt.Errorf("node %s panic: %v", nodeID, rec)
+					}
+				}()
+				var out map[string]any
+				var herr error
+				for attempt := 1; attempt <= r.maxAttempts; attempt++ {
+					if attempt > 1 {
+						time.Sleep(time.Duration(attempt-1) * 2 * time.Second) // 线性退避 2s,4s,...
+						step.Attempt = attempt
+						step.Status = "running"
+						_ = r.repos.Pipeline.UpdateStep(ctx, step)
+					}
+					r.publishStep(runID, nodeID, "progress", 0, fmt.Sprintf("start (attempt %d/%d)", attempt, r.maxAttempts))
+					nc := &NodeContext{
+						Ctx:      ctx,
+						RunID:    runID,
+						NodeID:   node.ID,
+						NodeType: node.Type,
+						ModelID:  node.ModelID,
+						Params:   node.Params,
+						Input:    nodeInput,
+						Logger:   r.log,
+						Publisher: func(pct float64, msg string) {
+							r.publishStep(runID, nodeID, "progress", pct, msg)
+						},
+					}
+					out, herr = handler(nc)
+					if herr == nil {
+						break
+					}
+					r.log.Warn("node handler error, will retry", zap.String("node_id", nodeID), zap.Int("attempt", attempt), zap.Error(herr))
 				}
-				out, herr := handler(nc)
 				if out == nil {
 					out = map[string]any{}
 				}

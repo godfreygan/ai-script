@@ -3,14 +3,31 @@ package adapter
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
+
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/circuitbreaker"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+
+	lru "github.com/hashicorp/golang-lru/v2"
+	"golang.org/x/sync/singleflight"
 )
+
+// cacheEntry 带 TTL 的缓存项
+type cacheEntry struct {
+	resp     *Response
+	cachedAt time.Time
+}
 
 // LiteLLMAdapter LiteLLM / One-API 风格的 OpenAI 兼容 HTTP 适配器
 //
@@ -24,21 +41,104 @@ type LiteLLMAdapter struct {
 	apiKey    string
 	modelName string
 	client    *http.Client
+	cb        *circuitbreaker.CircuitBreaker
+	sf        singleflight.Group
+	cache     *lru.Cache[string, *cacheEntry]
+	cacheTTL  time.Duration
+}
+
+var cbRegistry sync.Map // key=endpoint, value=*circuitbreaker.CircuitBreaker
+
+// stateChangeRecorder 用于注入 metrics 记录回调，避免 adapter 直接依赖 metrics 包造成循环依赖。
+// 由 metrics 包或初始化代码通过 SetCircuitBreakerStateRecorder 设置。
+var stateChangeRecorder atomic.Value // func(name, state string)
+
+// SetCircuitBreakerStateRecorder 设置熔断器状态变更记录回调。
+func SetCircuitBreakerStateRecorder(fn func(name, state string)) {
+	stateChangeRecorder.Store(fn)
+}
+
+func recordCircuitBreakerState(name, state string) {
+	if v := stateChangeRecorder.Load(); v != nil {
+		v.(func(string, string))(name, state)
+	}
+}
+
+func getCircuitBreaker(endpoint string) *circuitbreaker.CircuitBreaker {
+	if v, ok := cbRegistry.Load(endpoint); ok {
+		return v.(*circuitbreaker.CircuitBreaker)
+	}
+	cb := circuitbreaker.NewWithDefault(endpoint)
+	cb.SetOnStateChange(func(name string, from, to circuitbreaker.State) {
+		recordCircuitBreakerState(name, to.String())
+	})
+	actual, _ := cbRegistry.LoadOrStore(endpoint, cb)
+	return actual.(*circuitbreaker.CircuitBreaker)
 }
 
 func NewLiteLLMAdapter(code, baseURL, apiKey, modelName string, mtype ModelType) *LiteLLMAdapter {
+	ep := strings.TrimRight(baseURL, "/")
+	cache, _ := lru.New[string, *cacheEntry](128)
 	return &LiteLLMAdapter{
 		code:      code,
 		mtype:     mtype,
-		baseURL:   strings.TrimRight(baseURL, "/"),
+		baseURL:   ep,
 		apiKey:    apiKey,
 		modelName: modelName,
 		client:    &http.Client{Timeout: 5 * time.Minute},
+		cb:        getCircuitBreaker(ep),
+		cache:     cache,
+		cacheTTL:  5 * time.Second,
 	}
 }
 
 func (a *LiteLLMAdapter) Code() string    { return a.code }
 func (a *LiteLLMAdapter) Type() ModelType { return a.mtype }
+
+// cacheKey 根据模型 code、prompt 及关键参数生成确定性缓存键。
+func (a *LiteLLMAdapter) cacheKey(req *Request) string {
+	h := sha256.New()
+	h.Write([]byte(a.code))
+	h.Write([]byte{0})
+	h.Write([]byte(req.Prompt))
+	h.Write([]byte{0})
+	h.Write([]byte(a.modelName))
+	h.Write([]byte{0})
+	// 把 temperature / max_tokens / top_p / system 等影响结果的关键参数纳入
+	keys := make([]string, 0, len(req.Params))
+	for k := range req.Params {
+		switch k {
+		case "temperature", "max_tokens", "top_p", "system", "presence_penalty", "frequency_penalty":
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v, _ := json.Marshal(req.Params[k])
+		h.Write([]byte(k))
+		h.Write([]byte{1})
+		h.Write(v)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (a *LiteLLMAdapter) getCached(key string) *Response {
+	if a.cache == nil {
+		return nil
+	}
+	if ent, ok := a.cache.Get(key); ok && time.Since(ent.cachedAt) < a.cacheTTL {
+		return ent.resp
+	}
+	return nil
+}
+
+func (a *LiteLLMAdapter) setCached(key string, resp *Response) {
+	if a.cache == nil {
+		return
+	}
+	a.cache.Add(key, &cacheEntry{resp: resp, cachedAt: time.Now()})
+}
 
 // chatResponse 用于解析 OpenAI 兼容 /chat/completions 响应
 type chatResponse struct {
@@ -74,17 +174,54 @@ type imageResponse struct {
 }
 
 func (a *LiteLLMAdapter) Generate(ctx context.Context, req *Request) (*Response, error) {
-	start := time.Now()
-	switch a.mtype {
-	case TypeText:
-		return a.generateText(ctx, req, start)
-	case TypeImage:
-		return a.generateImage(ctx, req, start)
-	case TypeAudio:
-		return a.generateAudio(ctx, req, start)
-	default:
-		return nil, fmt.Errorf("adapter type %q not yet supported via litellm", a.mtype)
+	key := a.cacheKey(req)
+
+	// 1. 先读本地 LRU 缓存
+	if cached := a.getCached(key); cached != nil {
+		return cached, nil
 	}
+
+	// 2. singleflight 合并并发相同请求
+	// 使用独立 ctx 防止首个调用者 cancel 传染所有等待协程
+	v, err, _ := a.sf.Do(key, func() (any, error) {
+		// 再次检查缓存（可能前面协程已写入）
+		if cached := a.getCached(key); cached != nil {
+			return cached, nil
+		}
+
+		start := time.Now()
+		var resp *Response
+		var genErr error
+		cbErr := a.cb.Call(func() error {
+			// 独立超时 ctx，避免外部调用者 cancel 导致后续等待协程失败
+			sfCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			switch a.mtype {
+			case TypeText:
+				resp, genErr = a.generateText(sfCtx, req, start)
+			case TypeImage:
+				resp, genErr = a.generateImage(sfCtx, req, start)
+			case TypeAudio:
+				resp, genErr = a.generateAudio(sfCtx, req, start)
+			default:
+				genErr = fmt.Errorf("adapter type %q not yet supported via litellm", a.mtype)
+			}
+			return genErr
+		})
+		if cbErr == circuitbreaker.ErrOpen {
+			return nil, errcode.ErrUpstreamModel.WithMsg("上游模型服务熔断，请稍后重试")
+		}
+		if genErr != nil {
+			return nil, genErr
+		}
+		// 仅缓存成功的响应
+		a.setCached(key, resp)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*Response), nil
 }
 
 func (a *LiteLLMAdapter) generateText(ctx context.Context, req *Request, start time.Time) (*Response, error) {
@@ -121,7 +258,9 @@ func (a *LiteLLMAdapter) generateText(ctx context.Context, req *Request, start t
 		texts = append(texts, c.Message.Content)
 	}
 	var rawAny map[string]any
-	_ = json.Unmarshal(resp, &rawAny)
+	if err := json.Unmarshal(resp, &rawAny); err != nil {
+		rawAny = nil
+	}
 	return &Response{
 		Texts:        texts,
 		InputTokens:  cr.Usage.PromptTokens,
@@ -141,8 +280,12 @@ func (a *LiteLLMAdapter) generateImage(ctx context.Context, req *Request, start 
 	if req.NegPrompt != "" {
 		body["negative_prompt"] = req.NegPrompt
 	}
+	// 白名单透传，禁止覆盖核心字段
+	allowed := map[string]bool{"n": true, "size": true, "quality": true, "style": true, "response_format": true, "user": true}
 	for k, v := range req.Params {
-		body[k] = v
+		if allowed[k] {
+			body[k] = v
+		}
 	}
 	resp, err := a.doJSON(ctx, "/images/generations", body)
 	if err != nil {
@@ -162,7 +305,9 @@ func (a *LiteLLMAdapter) generateImage(ctx context.Context, req *Request, start 
 		}
 	}
 	var rawAny map[string]any
-	_ = json.Unmarshal(resp, &rawAny)
+	if err := json.Unmarshal(resp, &rawAny); err != nil {
+		rawAny = nil
+	}
 	return &Response{
 		ImageURLs:  urls,
 		Units:      len(urls),
@@ -225,8 +370,8 @@ func (a *LiteLLMAdapter) generateAudio(ctx context.Context, req *Request, start 
 		Units:      1,
 		DurationMs: int(time.Since(start).Milliseconds()),
 		Raw: map[string]any{
-			"audio_bytes": respBody,
-			"format":      "mp3",
+			"audio_bytes":     respBody,
+			"format":          "mp3",
 			"est_duration_ms": estMs,
 		},
 	}, nil

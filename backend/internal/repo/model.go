@@ -2,13 +2,26 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-type ModelRepo struct{ db *gorm.DB }
+type ModelRepo struct {
+	db  *gorm.DB
+	rdb *redis.Client
+}
+
+func (r *ModelRepo) WithDB(db *gorm.DB) *ModelRepo {
+	return &ModelRepo{db: db, rdb: r.rdb}
+}
+
+func (r *ModelRepo) WithRedis(rdb *redis.Client) *ModelRepo {
+	return &ModelRepo{db: r.db, rdb: rdb}
+}
 
 type ListModelsQuery struct {
 	Page, PageSize int
@@ -45,17 +58,23 @@ func (r *ModelRepo) List(ctx context.Context, q *ListModelsQuery) ([]model.Model
 }
 
 func (r *ModelRepo) ListAllEnabled(ctx context.Context) ([]model.Model, error) {
-	var list []model.Model
-	err := r.db.WithContext(ctx).Where("enabled = 1").Order("priority desc").Find(&list).Error
-	return list, err
+	loader := func(ctx context.Context) ([]model.Model, error) {
+		var list []model.Model
+		err := r.db.WithContext(ctx).Where("enabled = 1").Order("priority desc").Find(&list).Error
+		return list, err
+	}
+	return Get(ctx, r.rdb, cacheKey("model", "list_all_enabled"), loader, 5*time.Minute)
 }
 
 func (r *ModelRepo) Get(ctx context.Context, id int64) (*model.Model, error) {
-	var m model.Model
-	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
-		return nil, err
+	loader := func(ctx context.Context) (*model.Model, error) {
+		var m model.Model
+		if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
+			return nil, err
+		}
+		return &m, nil
 	}
-	return &m, nil
+	return Get(ctx, r.rdb, cacheKey("model", fmt.Sprintf("%d", id)), loader, 5*time.Minute)
 }
 
 func (r *ModelRepo) GetByCode(ctx context.Context, code string) (*model.Model, error) {
@@ -67,29 +86,52 @@ func (r *ModelRepo) GetByCode(ctx context.Context, code string) (*model.Model, e
 }
 
 func (r *ModelRepo) Create(ctx context.Context, m *model.Model) error {
-	return r.db.WithContext(ctx).Create(m).Error
+	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("model", fmt.Sprintf("%d", m.ID)))
+	Delete(ctx, r.rdb, cacheKey("model", "list_all_enabled"))
+	return nil
 }
 
 func (r *ModelRepo) Update(ctx context.Context, m *model.Model) error {
-	return r.db.WithContext(ctx).Save(m).Error
+	if err := r.db.WithContext(ctx).Model(&model.Model{}).Select("*").Omit("created_at").Where("id = ?", m.ID).Updates(m).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("model", fmt.Sprintf("%d", m.ID)))
+	Delete(ctx, r.rdb, cacheKey("model", "list_all_enabled"))
+	return nil
 }
 
 func (r *ModelRepo) UpdateAPIKey(ctx context.Context, id int64, encrypted []byte) error {
-	return r.db.WithContext(ctx).Model(&model.Model{}).
-		Where("id = ?", id).Update("api_key_encrypted", encrypted).Error
+	if err := r.db.WithContext(ctx).Model(&model.Model{}).
+		Where("id = ?", id).Update("api_key_encrypted", encrypted).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("model", fmt.Sprintf("%d", id)))
+	return nil
 }
 
 func (r *ModelRepo) UpdateHealth(ctx context.Context, id int64, status int8) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&model.Model{}).Where("id = ?", id).
+	if err := r.db.WithContext(ctx).Model(&model.Model{}).Where("id = ?", id).
 		Updates(map[string]any{
 			"last_health_at":     now,
 			"last_health_status": status,
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("model", fmt.Sprintf("%d", id)))
+	return nil
 }
 
 func (r *ModelRepo) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&model.Model{}, id).Error
+	if err := r.db.WithContext(ctx).Delete(&model.Model{}, id).Error; err != nil {
+		return err
+	}
+	Delete(ctx, r.rdb, cacheKey("model", fmt.Sprintf("%d", id)))
+	Delete(ctx, r.rdb, cacheKey("model", "list_all_enabled"))
+	return nil
 }
 
 // =============== ModelInvocation ===============
@@ -199,4 +241,3 @@ func (r *InvocationRepo) StatsAll(ctx context.Context, q *ListInvocationsQuery) 
 		Scan(&s).Error
 	return &s, err
 }
-

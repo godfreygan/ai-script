@@ -3,6 +3,11 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/mysql"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 )
@@ -12,10 +17,39 @@ import (
 // 这里保留 sentinel 仅作类型断言用,不会被实际返回。
 var ErrSeedFailed = errors.New("seed failed")
 
-// Migrate 跑 GORM AutoMigrate 把所有业务表补齐,然后写入默认 seed 数据。
-// 注意:AutoMigrate 只增不删,生产环境慎用——但 MVP 阶段可启动时直接调。
-// Seed 必须幂等,Seed 失败不会阻止启动(被 swallow,仅打印到 stderr/log)。
-func (r *Repositories) Migrate(ctx context.Context) error {
+// Migrate 跑数据库迁移。
+//
+//	mode="auto" 或 "" → GORM AutoMigrate(只增不删,MVP 安全)
+//	mode="off"        → 跳过迁移
+//	mode="migrate"    → 使用 golang-migrate(需提前准备 migrations 目录)
+//
+// Seed 必须幂等,Seed 失败不会阻止启动。
+func (r *Repositories) Migrate(ctx context.Context, mode, source, dsn string) error {
+	if mode == "off" {
+		return nil
+	}
+	if mode == "migrate" {
+		// 使用 golang-migrate 执行真实的数据库迁移
+		if source == "" {
+			source = "file://./migrations"
+		}
+		if dsn == "" {
+			return fmt.Errorf("migrate mode=migrate requires a non-empty DSN")
+		}
+		m, err := migrate.New(source, dsn)
+		if err != nil {
+			return fmt.Errorf("migrate: failed to initialize migrate: %w", err)
+		}
+		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+			return fmt.Errorf("migrate: up failed: %w", err)
+		}
+		// 迁移完成后执行 Seed（幂等）
+		if err := r.Seed(ctx); err != nil {
+			r.DB.Logger.Warn(ctx, "seed default data failed: %v", err)
+		}
+		return nil
+	}
+	// 默认 auto
 	if err := r.DB.WithContext(ctx).AutoMigrate(
 		// 基础域
 		&model.User{}, &model.Department{}, &model.Role{}, &model.Project{},

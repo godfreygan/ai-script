@@ -1,116 +1,588 @@
-# AI-Script 系统运维与部署指南
+# AI-Script 部署与运维指南
 
-> 版本：v1.0
-> 更新日期：2026-05-12
-> 适用版本：Go 1.22 + AI-Script Backend
+> 版本:v2.0(2026-05-13 重组)
+> 适用版本:Go 1.24 + AI-Script Backend
+> 本文档按**部署方式**分组组织,选定一种方式后只看对应章节即可。
 
 ---
 
 ## 目录
 
-1. [系统架构概述](#1-系统架构概述)
-2. [系统需求](#2-系统需求)
-3. [依赖安装](#3-依赖安装)
-4. [配置详解](#4-配置详解)
-5. [部署方式](#5-部署方式)
-   - 5.1 Docker 部署（推荐）
-   - 5.2 Linux 二进制部署
-   - 5.3 Windows 二进制部署
-   - 5.4 Kubernetes 部署
-6. [数据库初始化与迁移](#6-数据库初始化与迁移)
-7. [启动与停止](#7-启动与停止)
-8. [监控与日志](#8-监控与日志)
-9. [备份与恢复策略](#9-备份与恢复策略)
-10. [故障排查手册](#10-故障排查手册)
-11. [安全加固建议](#11-安全加固建议)
-12. [升级指南](#12-升级指南)
+- [0. 概览](#0-概览)
+  - [0.1 系统架构](#01-系统架构)
+  - [0.2 四种部署方式对比](#02-四种部署方式对比)
+  - [0.3 部署前置清单](#03-部署前置清单)
+- [1. 通用前置(所有部署方式必读)](#1-通用前置所有部署方式必读)
+  - [1.1 系统需求](#11-系统需求)
+  - [1.2 关键密钥与凭据](#12-关键密钥与凭据)
+  - [1.3 配置与环境变量映射](#13-配置与环境变量映射)
+  - [1.4 .env.example 三个文件指引](#14-envexample-三个文件指引)
+  - [1.5 数据库初始化机制](#15-数据库初始化机制)
+- [2. 部署方式 A:Docker Compose(推荐)](#2-部署方式-adocker-compose推荐)
+- [3. 部署方式 B:Linux 二进制 + systemd](#3-部署方式-blinux-二进制--systemd)
+- [4. 部署方式 C:Windows 二进制 + NSSM](#4-部署方式-cwindows-二进制--nssm)
+- [5. 部署方式 D:Kubernetes](#5-部署方式-dkubernetes)
+- [6. CI/CD 流水线(GitHub Actions)](#6-cicd-流水线github-actions)
+- [7. 部署后验收](#7-部署后验收)
+- [8. 运维通用项](#8-运维通用项)
+- [9. FAQ — 常见问题速答](#9-faq--常见问题速答)
+- [附录](#附录)
 
 ---
 
-## 1. 系统架构概述
+## 0. 概览
 
-AI-Script 采用**双进程架构**：
+### 0.1 系统架构
 
-- **server**：HTTP API 服务，基于 Gin 框架，对外提供 RESTful API 与 WebSocket 进度推送。
-- **worker**：异步任务消费者，基于 Asynq 从 Redis 拉取任务，执行 LLM 调用、媒体合成等耗时操作。
+AI-Script 采用**双进程架构**:
 
-两进程共享：
-- **MySQL**：业务数据持久化（GORM）
-- **Redis**：缓存 + Asynq 任务队列 + WebSocket Pub/Sub 桥接
-- **对象存储**：上传文件与生成资源（S3 / MinIO / 本地文件系统）
+- **server**:HTTP API,基于 Gin 框架,对外提供 RESTful API + WebSocket 进度推送
+- **worker**:异步任务消费者,基于 Asynq 从 Redis 拉取任务,执行 LLM 调用、媒体合成
+
+共享依赖:**MySQL 8.0**(业务数据) + **Redis 7**(缓存/队列/Pub-Sub) + **对象存储**(本地/MinIO/OSS/S3/COS)
 
 ```
-+--------+      HTTP       +---------+
-| Client | <-------------> |  server |
-+--------+                 +---------+
-                              | WS
-                              v
-+--------+     Redis      +---------+
-| Worker | <------------> |  Redis  |
-+--------+   Asynq Queue  +---------+
-     |                            |
-     v                            v
-+---------+                +----------+
-|  MySQL  |                | Storage  |
-+---------+                +----------+
++--------+  HTTP  +--------+         +-------+
+| Client | -----> | server | <-----> | MySQL |
++--------+        +--------+         +-------+
+                      |  WS                |
+                      v                    |
+                  +-------+                |
+                  | Redis | <----+         |
+                  +-------+      |    +---------+
+                      ^          +----| Storage |
+                      |  Asynq        +---------+
+                      |  Queue
+                  +--------+
+                  | worker |
+                  +--------+
 ```
+
+### 0.2 四种部署方式对比
+
+| 部署方式 | 适用场景 | 单机/集群 | 操作系统 | 复杂度 | 推荐度 |
+|---------|---------|----------|---------|--------|--------|
+| **A. Docker Compose** | 开发 / 中小型生产 | 单机 | Linux/macOS/Windows | ⭐ | ⭐⭐⭐⭐⭐ |
+| **B. Linux 二进制 + systemd** | 性能敏感的生产 / 已有 MySQL/Redis | 单机 | Linux | ⭐⭐ | ⭐⭐⭐⭐ |
+| **C. Windows 二进制 + NSSM** | Windows Server / 内网部署 | 单机 | Windows | ⭐⭐ | ⭐⭐⭐ |
+| **D. Kubernetes** | 高可用 / 弹性扩缩容 | 集群 | Linux | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+
+> **怎么选?**
+> - 第一次部署 / 不确定 → **A. Docker Compose**
+> - 已有 MySQL/Redis,要榨干性能 → **B. Linux 二进制**
+> - 客户内网只能用 Windows Server → **C. Windows 二进制**
+> - 业务量大、要高可用、要灰度 → **D. Kubernetes**
+
+### 0.3 部署前置清单
+
+无论选哪种方式,部署前请确认:
+
+- [ ] 服务器满足硬件需求(见 §1.1)
+- [ ] 出站网络可访问 AI 模型网关(OpenAI / LiteLLM / 阿里云百炼等)
+- [ ] 已准备好 **JWT_SECRET**(>= 32 字符随机)
+- [ ] 已准备好 **CRYPTO_KEY**(AES-256,32 字节)— 用 `make` 或 `go run ./cmd/genkey` 生成
+- [ ] 已准备好**对象存储**凭据(或决定先用本地存储/MinIO)
+- [ ] 端口未冲突:**80**(前端)、**8080**(后端)、**3306**(MySQL)、**6379**(Redis)、**9000/9001**(MinIO,可选)
 
 ---
 
-## 2. 系统需求
+## 1. 通用前置(所有部署方式必读)
 
-### 2.1 硬件需求
+### 1.1 系统需求
+
+#### 硬件
 
 | 规模 | CPU | 内存 | 磁盘 | 网络 |
 |------|-----|------|------|------|
 | 开发/测试 | 2 核 | 4 GB | 50 GB SSD | 10 Mbps |
-| 生产（单节点） | 4 核 | 8 GB | 200 GB SSD | 50 Mbps |
-| 生产（高可用） | 8 核+ | 16 GB+ | 500 GB SSD | 100 Mbps+ |
+| 生产(单节点) | 4 核 | 8 GB | 200 GB SSD | 50 Mbps |
+| 生产(高可用) | 8 核+ | 16 GB+ | 500 GB SSD | 100 Mbps+ |
 
-> 注：媒体处理（FFmpeg 合成）对 CPU 与磁盘 I/O 敏感，建议生产环境预留 2 倍余量。
+> FFmpeg 媒体合成对 CPU 与磁盘 I/O 敏感,生产环境建议预留 2 倍余量。
 
-### 2.2 软件需求
+#### 软件版本
 
-| 组件 | 最低版本 | 说明 |
-|------|---------|------|
-| Go | 1.22 | 编译必需 |
-| MySQL | 5.7+ | 主数据库，推荐 8.0 |
-| Redis | 6.0+ | 缓存 + 队列 + Pub/Sub |
-| FFmpeg | 5.0+ | 媒体处理（Docker 镜像已内置） |
-| Docker | 20.10+ | 容器化部署 |
-| Docker Compose | 2.0+ | 多服务编排 |
+| 组件 | 最低版本 | 用于哪种部署方式 |
+|------|---------|----------------|
+| **Go** | **1.24**(`go.mod` 锁定) | B/C(二进制部署需本机编译);A 用容器镜像,D 用 CI 产物 |
+| MySQL | 5.7+(推荐 8.0) | 全部 |
+| Redis | 6.0+(推荐 7.x) | 全部 |
+| FFmpeg | 5.0+ | B/C(容器镜像已内置) |
+| Docker | 20.10+ | A/D(K8s 集群节点) |
+| Docker Compose | 2.0+(`docker compose` 命令) | A |
 
-### 2.3 网络需求
+> ⚠️ **Go 版本一致性提示**:仓库内 `go.mod` 锁定 **1.24**,本机编译需要 Go 1.24+。镜像构建时若失败,确认 `backend/Dockerfile` 的 `FROM` 已升到 `golang:1.24-alpine` 即可。
 
-- server 暴露端口：**8080**（HTTP API）
-- MySQL 端口：**3306**
-- Redis 端口：**6379**
-- 对象存储端口：视 provider 而定（S3: 443, MinIO: 9000/9001）
-- 出站：需访问 AI 模型网关（OpenAI / 阿里云 / 自建 LiteLLM 等）
+#### 网络端口
+
+| 端口 | 服务 | 是否对外 |
+|------|------|---------|
+| 80 | frontend (nginx) | 是 |
+| 8080 | backend (server) | 视部署而定 |
+| 3306 | MySQL | 仅内网 |
+| 6379 | Redis | 仅内网 |
+| 9000 | MinIO API | 仅内网 |
+| 9001 | MinIO Console | 仅内网/可选对外 |
+
+### 1.2 关键密钥与凭据
+
+#### JWT_SECRET
+
+```bash
+# 生成 48 字节 base64(>= 32 字符)
+openssl rand -base64 48
+```
+
+- **生产环境必须更换**默认值,长度建议 >= 64 字符
+- 建议每 90 天轮换
+- `server` 与 `worker` 必须使用**同一个**值
+
+#### CRYPTO_KEY / CRYPTO_KEY_BASE64
+
+模型 `api_key` 入库前用 **AES-256-GCM** 加密,需要一个 32 字节密钥。**两种写法二选一**:
+
+```bash
+# 写法 A:32 字节明文(适用 CRYPTO_KEY)
+openssl rand -base64 32 | head -c 32
+
+# 写法 B:base64 编码的 32 字节(适用 CRYPTO_KEY_BASE64)
+openssl rand -base64 32
+
+# 或用项目自带工具(如已实现)
+cd backend && go run ./cmd/genkey
+```
+
+> **优先级**:当两者都设置时,通常 `CRYPTO_KEY` 优先。`deploy/docker-compose.yml`(生产 compose)使用 `CRYPTO_KEY_BASE64`,根 `docker-compose.yml`(开发 compose)使用 `CRYPTO_KEY` — 别搞混。
+
+#### 默认管理员账号
+
+首次启动后,种子数据会创建管理员账号:
+
+| 字段 | 值 | 来源 |
+|------|---|------|
+| 用户名 | `admin` | `backend/internal/repo/seed.go` |
+| 密码 | `admin123` | 同上(bcrypt) |
+| 邮箱 | `admin@example.com` | 同上 |
+
+> ⚠️ **首次登录后立即修改密码**。`README.md` 中曾出现 `admin@123` 的写法是历史误写,**以代码为准**。
+
+### 1.3 配置与环境变量映射
+
+配置加载顺序:
+
+1. 读取 `backend/configs/config.yaml`(或 `CONFIG_FILE` 指定的文件)
+2. 环境变量覆盖同名配置(下划线大写命名,如 `APP_ENV` 覆盖 `app.env`)
+3. 支持 `${VAR:default}` 默认值语法
+
+完整环境变量映射见 [附录 B](#b-环境变量速查表)。
+
+### 1.4 .env.example 三个文件指引
+
+仓库内有 **3 个** `.env.example`,**用途完全不同**,这是历史散乱点之一,务必看清:
+
+| 文件 | 用途 | 配合的 compose | 关键差异 |
+|------|------|---------------|---------|
+| `/.env.example`(根目录) | 开发 / 本地 docker compose | `/docker-compose.yml` | 使用 `MYSQL_ROOT_PWD` / `CRYPTO_KEY` |
+| `/deploy/.env.example` | 生产 / 容器化部署 | `/deploy/docker-compose.yml` | 使用 `MYSQL_ROOT_PASSWORD` / `CRYPTO_KEY_BASE64` |
+| `/backend/.env.example` | 后端独立运行(B/C 部署方式) | 无 compose,供 systemd/NSSM 直接读取 | 简化版,只含 backend 必需变量 |
+
+> **何时用哪个?**
+> - 跑根目录 compose → `cp .env.example .env`
+> - 跑 deploy/ compose → `cd deploy && cp .env.example .env`
+> - Linux/Windows 二进制 → 用 `backend/.env.example` 作为参考,导出为环境变量或写入 systemd unit / NSSM 服务
+
+> ⚠️ **变量名差异**:根 compose 用 `MYSQL_ROOT_PWD`,deploy compose 用 `MYSQL_ROOT_PASSWORD`。**两个文件不能互换 .env**。
+
+### 1.5 数据库初始化机制
+
+#### MVP 阶段:GORM AutoMigrate
+
+`server` / `worker` 启动时自动执行 `GORM AutoMigrate`,**只增不删**:
+
+涉及的表(节选):`users` / `departments` / `roles` / `projects` / `models` / `scripts` / `episodes` / `storyboards` / `pipelines` / `pipeline_runs` / `step_runs` / `review_flows` / `publishes` / `audit_logs` / `billing_quotas` 等。
+
+#### 种子数据
+
+通过 SQL 脚本或代码 seed 注入:
+
+| 数据源 | 内容 | 触发时机 |
+|--------|------|---------|
+| `scripts/sql/001_init.sql` | DDL(可选,与 AutoMigrate 二选一) | docker compose 首次启动,`mysql:8.0` 的 `/docker-entrypoint-initdb.d/` 自动执行 |
+| `scripts/sql/002_seed.sql` | 部门 / 权限点等业务数据 | 同上 |
+| `backend/internal/repo/seed.go` | 管理员 `admin/admin123` / 默认角色 / 配额 | server 启动时代码注入 |
+
+#### 生产环境建议
+
+生产环境长期方案应改用 **golang-migrate** 或 **Atlas** 管理 schema 变更,见 §8.5。
 
 ---
 
-## 3. 依赖安装
+## 2. 部署方式 A:Docker Compose(推荐)[docker-compose.yml](../docker-compose.yml)
 
-### 3.1 MySQL 5.7+ / 8.0
+> ⭐ 90% 的场景适用,适合开发、测试、小型生产。
 
-**Linux (Ubuntu/Debian)**
+### 2.1 选哪个 compose 文件
+
+仓库内有**两个** docker-compose.yml,用途不同:
+
+| 文件 | 用途 | 工作目录 | 配套 .env |
+|------|------|---------|----------|
+| `/docker-compose.yml`(根) | **开发 / 本地**,带 build 配置,变量名 `MYSQL_ROOT_PWD` | 仓库根目录 | `/.env` |
+| `/deploy/docker-compose.yml` | **生产**,使用 `CRYPTO_KEY_BASE64`,`mysql:3306` 端口仅绑 127.0.0.1 | `/deploy` 目录 | `/deploy/.env` |
+
+**选错文件最常见的失败:** "Did not find expected key" / "MYSQL_DSN is required" — 因为 .env 变量名与 compose 引用的不匹配。
+
+### 2.2 开发环境:根目录 compose
+
+```bash
+# 1. 准备 .env(根目录)
+cp .env.example .env
+# 编辑:把 JWT_SECRET 和 CRYPTO_KEY 改成 32 字节随机串
+
+# 2. 一键拉起全部服务
+docker compose up -d
+
+# 3. 查看状态 / 日志
+docker compose ps
+docker compose logs -f server
+docker compose logs -f worker
+
+# 4. 停止 / 清理
+docker compose down          # 保留数据卷
+docker compose down -v       # 连数据卷一起清除(慎用)
+```
+
+启动后:
+- 前端:http://localhost/
+- 后端 API:http://localhost:8080
+- MinIO Console:http://localhost:9001(账号见 .env 中 `MINIO_ROOT_USER`)
+- 默认登录:`admin` / `admin123`
+
+### 2.3 生产环境:deploy/ compose
+
+```bash
+# 1. 准备 .env(deploy 目录)
+cd deploy
+cp .env.example .env
+# 编辑:
+#   MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD(强密码)
+#   JWT_SECRET(>= 32 字符随机)
+#   CRYPTO_KEY_BASE64(base64 编码的 32 字节)
+#   MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
+#   MODEL_GATEWAY_URL / MODEL_GATEWAY_KEY(指向 LiteLLM/OneAPI)
+
+# 2. 启动
+docker compose up -d --build
+
+# 3. 健康检查
+curl http://localhost:8080/healthz/live
+curl http://localhost:8080/healthz/ready
+```
+
+#### 与开发版的关键差异
+
+| 项 | 根 compose | deploy compose |
+|----|-----------|---------------|
+| 服务名 | `server` / `worker` / `frontend` | `backend` / `worker` / `frontend` |
+| MySQL 端口绑定 | `127.0.0.1:${MYSQL_PORT:-3306}` | `127.0.0.1:3306`(固定) |
+| 加密变量 | `CRYPTO_KEY`(明文 32 字节) | `CRYPTO_KEY_BASE64`(base64) |
+| MYSQL_DSN | .env 单独提供 | compose 内部由 `MYSQL_USER`/`MYSQL_PASSWORD`/`MYSQL_DATABASE` 拼装 |
+| `APP_ENV` 默认 | `local` | `prod` |
+| 网络拓扑 | 单网 `ai-script-net` | 分网 `db-net` + `app-net`(安全隔离) |
+
+### 2.4 单容器部署(已有外部 MySQL/Redis)
+
+如果生产环境已经有现成的 MySQL / Redis,可以只跑 backend/worker 容器:
+
+```bash
+# 构建镜像
+cd backend
+docker build -t ai-script-backend:latest .
+
+# 运行 server
+docker run -d \
+  --name ai-script-server \
+  -p 8080:8080 \
+  -e APP_ENV=prod \
+  -e MYSQL_DSN="aiscript:password@tcp(host.docker.internal:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local" \
+  -e REDIS_ADDR="host.docker.internal:6379" \
+  -e JWT_SECRET="your-jwt-secret" \
+  -e CRYPTO_KEY_BASE64="your-base64-key" \
+  ai-script-backend:latest
+
+# 运行 worker(同镜像,不同 entrypoint)
+docker run -d \
+  --name ai-script-worker \
+  -e APP_ENV=prod \
+  -e MYSQL_DSN="..." \
+  -e REDIS_ADDR="host.docker.internal:6379" \
+  -e JWT_SECRET="..." \
+  -e CRYPTO_KEY_BASE64="..." \
+  --entrypoint /app/worker \
+  ai-script-backend:latest
+```
+
+### 2.5 升级(Docker Compose)
+
+```bash
+# 拉新代码
+git pull origin main
+
+# 重建镜像并滚动重启
+docker compose up -d --build
+
+# 或分步:
+docker compose build
+docker compose up -d --no-deps server worker  # 不重启 MySQL/Redis
+
+# 验证
+docker compose ps
+docker compose logs -f server
+curl http://localhost:8080/healthz/ready
+```
+
+### 2.6 Docker 方式常见问题
+
+| 问题 | 速答 |
+|------|------|
+| `MYSQL_DSN is required` 启动失败 | .env 缺变量;检查是否用错 compose 配套的 .env(见 §1.4) |
+| 容器 `unhealthy` 一直起不来 | `backend/Dockerfile` 的 HEALTHCHECK 当前 endpoint 是 `/healthz`,实际应是 `/healthz/live`(详见 §9.2 第 6 条) |
+| `mysql_native_password` 报错 | 根 compose 已设 `--default-authentication-plugin=mysql_native_password`;deploy compose 没设,如需对接老客户端工具请加上 |
+| 删完容器数据还在 | 数据卷未清,`docker compose down -v` 才会清 |
+| 改了 .env 不生效 | 必须 `docker compose down && up -d`,只 restart 不重新读取 env_file |
+
+---
+
+## 3. 部署方式 B:Linux 二进制 + systemd
+
+> 适合对性能、资源、安全有精确控制的生产环境;已有 MySQL/Redis 时尤其推荐。
+
+### 3.1 依赖安装
+
+#### MySQL 5.7+ / 8.0(Ubuntu/Debian)
 
 ```bash
 sudo apt update
 sudo apt install -y mysql-server-8.0
 sudo mysql_secure_installation
 
-# 创建数据库与用户
-sudo mysql -u root -p
+sudo mysql -u root -p <<'SQL'
+CREATE DATABASE ai_script CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'aiscript'@'%' IDENTIFIED BY 'YourStrongPassword123!';
+GRANT ALL PRIVILEGES ON ai_script.* TO 'aiscript'@'%';
+FLUSH PRIVILEGES;
+SQL
 ```
 
-**Windows**
+#### Redis 6.0+
 
-1. 下载 MySQL Installer：https://dev.mysql.com/downloads/installer/
+```bash
+sudo apt install -y redis-server
+sudo systemctl enable --now redis-server
+
+# 设置密码(/etc/redis/redis.conf):
+#   requirepass YourRedisPassword
+sudo systemctl restart redis-server
+```
+
+#### FFmpeg 5.0+
+
+```bash
+sudo apt install -y ffmpeg
+ffmpeg -version   # 应 >= 5.0
+```
+
+### 3.2 编译二进制
+
+```bash
+cd backend
+
+# 国内加速
+export GOPROXY=https://goproxy.cn,direct
+go mod download
+
+# 构建(根 Makefile 与 backend/Makefile 都能用)
+make build
+# 产物:
+#   - backend/Makefile 用法 → backend/out/server, backend/out/worker
+#   - 根 Makefile 用法    → backend/bin/server, backend/bin/worker
+```
+
+> ⚠️ **两个 Makefile 的差异**:根 `Makefile` 输出到 `backend/bin/`,`backend/Makefile` 输出到 `backend/out/`。本指南以 `backend/out/` 为准。
+
+### 3.3 目录规划
+
+```
+/opt/ai-script/
+├── server                  # 二进制
+├── worker                  # 二进制
+├── configs/
+│   ├── config.yaml         # 主配置
+│   └── rbac_model.conf     # Casbin 模型
+├── var/uploads/            # 本地存储(若用 OSS 可不要)
+└── logs/                   # 日志输出
+```
+
+```bash
+sudo useradd -r -s /bin/false ai-script
+sudo mkdir -p /opt/ai-script/{configs,var/uploads,logs} /var/log/ai-script
+sudo cp backend/out/server backend/out/worker /opt/ai-script/
+sudo cp backend/configs/config.yaml /opt/ai-script/configs/
+sudo chown -R ai-script:ai-script /opt/ai-script /var/log/ai-script
+```
+
+### 3.4 systemd 服务单元
+
+`/etc/systemd/system/ai-script-server.service`:
+
+```ini
+[Unit]
+Description=AI-Script Server
+After=network.target mysql.service redis-server.service
+Wants=mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=ai-script
+Group=ai-script
+WorkingDirectory=/opt/ai-script
+EnvironmentFile=/opt/ai-script/.env
+ExecStart=/opt/ai-script/server
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/ai-script/server.log
+StandardError=append:/var/log/ai-script/server.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/ai-script-worker.service`:
+
+```ini
+[Unit]
+Description=AI-Script Worker
+After=network.target mysql.service redis-server.service
+Wants=mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=ai-script
+Group=ai-script
+WorkingDirectory=/opt/ai-script
+EnvironmentFile=/opt/ai-script/.env
+ExecStart=/opt/ai-script/worker
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/ai-script/worker.log
+StandardError=append:/var/log/ai-script/worker.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/opt/ai-script/.env`(参考 `backend/.env.example`):
+
+```bash
+APP_ENV=prod
+APP_PORT=8080
+APP_LOG_LEVEL=info
+GIN_MODE=release
+MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local
+REDIS_ADDR=127.0.0.1:6379
+REDIS_PASSWORD=YourRedisPassword
+JWT_SECRET=your-64-char-random-jwt-secret
+CRYPTO_KEY=your-32-byte-crypto-key
+OSS_PROVIDER=local
+OSS_BUCKET=/opt/ai-script/var/uploads
+OSS_PUBLIC_HOST=/uploads
+MODEL_GATEWAY_URL=https://your-litellm.example.com/v1
+MODEL_GATEWAY_KEY=sk-your-gateway-key
+```
+
+```bash
+sudo chmod 600 /opt/ai-script/.env
+sudo chown ai-script:ai-script /opt/ai-script/.env
+```
+
+### 3.5 启用 / 启动 / 查日志
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now ai-script-server ai-script-worker
+
+# 状态
+sudo systemctl status ai-script-server
+sudo systemctl status ai-script-worker
+
+# 日志(实时)
+sudo journalctl -u ai-script-server -f
+sudo journalctl -u ai-script-worker -f
+# 或
+tail -f /var/log/ai-script/server.log /var/log/ai-script/worker.log
+
+# 重启 / 优雅停止
+sudo systemctl restart ai-script-server
+sudo systemctl stop    ai-script-server
+```
+
+### 3.6 优雅停止说明
+
+server / worker 都监听 `SIGINT` / `SIGTERM`:
+- **server**:停止接受新请求,10 秒内完成在处理的 HTTP 请求后退出
+- **worker**:停止消费新任务,等待当前任务完成后退出
+
+### 3.7 升级(二进制)
+
+```bash
+# 1. 拉新代码 + 编译
+git pull origin main
+cd backend && make build
+
+# 2. 备份当前二进制(可回滚)
+sudo cp /opt/ai-script/server  /opt/ai-script/server.bak
+sudo cp /opt/ai-script/worker  /opt/ai-script/worker.bak
+
+# 3. 替换 + 重启
+sudo systemctl stop  ai-script-server ai-script-worker
+sudo cp out/server out/worker /opt/ai-script/
+sudo systemctl start ai-script-server ai-script-worker
+
+# 4. 验证
+curl http://localhost:8080/healthz/ready
+sudo systemctl status ai-script-server
+
+# 5. 失败回滚
+sudo systemctl stop ai-script-server ai-script-worker
+sudo cp /opt/ai-script/server.bak /opt/ai-script/server
+sudo cp /opt/ai-script/worker.bak /opt/ai-script/worker
+sudo systemctl start ai-script-server ai-script-worker
+```
+
+### 3.8 Linux 二进制常见问题
+
+| 问题 | 速答 |
+|------|------|
+| `systemctl start` 后立即 failed | `journalctl -u ai-script-server -n 100` 看真实报错;通常是 .env 缺变量或 MySQL/Redis 未启动 |
+| `EnvironmentFile` 没生效 | 文件权限不是 600 / 不是 ai-script 用户可读;`sudo -u ai-script cat /opt/ai-script/.env` 验证 |
+| Bind: address already in use | 8080 被占用,`sudo ss -tlnp \| grep 8080` 找出占用进程 |
+
+---
+
+## 4. 部署方式 C:Windows 二进制 + NSSM
+
+> 适用 Windows Server 部署或客户内网只能用 Windows 的场景。
+
+### 4.1 依赖安装
+
+#### MySQL 8.0
+
+1. 下载 MySQL Installer:https://dev.mysql.com/downloads/installer/
 2. 选择 **Server only** 安装类型
-3. 记住 root 密码，启用 MySQL 服务（默认开机自启）
-4. 使用 MySQL Command Line Client 或 MySQL Workbench 执行初始化 SQL：
+3. 记住 root 密码,启用 MySQL 服务(默认开机自启)
+4. 在 MySQL Workbench / Command Line Client 中执行:
 
 ```sql
 CREATE DATABASE ai_script CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -119,427 +591,31 @@ GRANT ALL PRIVILEGES ON ai_script.* TO 'aiscript'@'%';
 FLUSH PRIVILEGES;
 ```
 
-### 3.2 Redis 6.0+
+#### Redis 7+
 
-**Linux (Ubuntu/Debian)**
-
-```bash
-sudo apt install -y redis-server
-sudo systemctl enable redis-server
-sudo systemctl start redis-server
-
-# 如需密码，修改 /etc/redis/redis.conf
-# requirepass YourRedisPassword
-sudo systemctl restart redis-server
-```
-
-**Windows**
-
-1. 下载 Redis for Windows（微软维护版或 Memurai）：
-   - 推荐：https://github.com/microsoftarchive/redis/releases
-   - 或商业版 Memurai：https://www.memurai.com/
-2. 解压到 `C:\Redis`，将目录加入系统 PATH
-3. 启动 Redis 服务：
+1. 下载 Redis for Windows(微软维护版或 [Memurai](https://www.memurai.com/))
+2. 解压到 `C:\Redis`,加入 PATH
+3. 注册为 Windows 服务(以管理员身份运行 PowerShell):
 
 ```powershell
-# 注册为 Windows 服务（以管理员身份运行 PowerShell）
 cd C:\Redis
 redis-server --service-install redis.windows.conf --loglevel verbose
 redis-server --service-start
 ```
 
-### 3.3 FFmpeg
+#### FFmpeg
 
-**Linux (Ubuntu/Debian)**
+1. 下载:https://www.gyan.dev/ffmpeg/builds/ (选 `ffmpeg-release-essentials.7z`)
+2. 解压到 `C:\ffmpeg`,将 `C:\ffmpeg\bin` 加入系统 PATH
+3. 验证:`ffmpeg -version`
 
-```bash
-sudo apt install -y ffmpeg
-ffmpeg -version
-```
-
-**macOS**
-
-```bash
-brew install ffmpeg
-```
-
-**Windows**
-
-1. 下载 Windows 构建版：https://www.gyan.dev/ffmpeg/builds/（选择 `ffmpeg-release-essentials.7z`）
-2. 解压到 `C:\ffmpeg`
-3. 将 `C:\ffmpeg\bin` 加入系统 PATH 环境变量
-4. 验证：
+### 4.2 编译 Windows 二进制
 
 ```powershell
-ffmpeg -version
-```
-
-### 3.4 对象存储（三选一）
-
-#### 选项 A：本地文件系统（开发/测试）
-
-无需额外安装，配置 `provider: local`，程序自动创建 `./var/uploads` 目录。
-
-#### 选项 B：MinIO（自建对象存储）
-
-```bash
-docker run -d \
-  --name minio \
-  -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin123 \
-  -v /data/minio:/data \
-  minio/minio server /data --console-address ":9001"
-```
-
-创建 bucket：
-
-```bash
-mc alias set local http://localhost:9000 minioadmin minioadmin123
-mc mb local/ai-script
-mc anonymous set download local/ai-script
-```
-
-#### 选项 C：阿里云 OSS / AWS S3 / 腾讯云 COS
-
-在对应云控制台创建 bucket，获取 AccessKey / SecretKey，记录 Endpoint 与 Region。
-
----
-
-## 4. 配置详解
-
-配置文件路径：`configs/config.yaml`
-
-配置加载顺序：
-1. 读取 `configs/config.yaml`
-2. 环境变量以 `_` 分隔覆盖同名配置（如 `APP_ENV` 覆盖 `app.env`）
-3. 支持 `${VAR:default}` 语法展开
-
-### 4.1 完整配置示例
-
-```yaml
-app:
-  name: ai-script
-  env: prod
-  port: 8080
-  log_level: info
-
-jwt:
-  secret: "change-me-to-64-char-random-string-in-production"
-  access_expires_in: 7200
-  refresh_expires_in: 604800
-
-mysql:
-  dsn: "aiscript:YourStrongPassword123!@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC&time_zone=%27%2B00%3A00%27"
-  max_idle: 10
-  max_open: 100
-
-redis:
-  addr: "127.0.0.1:6379"
-  password: ""
-  db: 0
-
-storage:
-  provider: local          # local | s3 | aliyun | cos
-  endpoint: ""
-  region: ""
-  bucket: "./var/uploads"  # local 时为目录路径；云存储时为 bucket 名
-  access_key: ""
-  secret_key: ""
-  public_host: "/uploads"  # 本地为 URL 前缀；云存储为 CDN 域名
-
-crypto:
-  key: "Aix2XN/944vtHhBM5bd2Ibv5SQTCgZ/GwHheRVlwyiQ="
-
-model_gateway:
-  url: "https://your-litellm.example.com/v1"
-  key: "sk-your-gateway-key"
-```
-
-### 4.2 配置项说明
-
-| 配置项 | 类型 | 必填 | 默认值 | 说明 |
-|--------|------|------|--------|------|
-| `app.name` | string | 是 | `ai-script` | 应用名称，用于日志标识 |
-| `app.env` | string | 是 | `dev` | 环境：`dev` / `staging` / `prod` |
-| `app.port` | int | 是 | `8080` | HTTP 监听端口 |
-| `app.log_level` | string | 是 | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
-| `jwt.secret` | string | 是 | - | JWT 签名密钥，**生产环境必须更换** |
-| `jwt.access_expires_in` | int | 是 | `7200` | Access Token 过期时间（秒） |
-| `jwt.refresh_expires_in` | int | 是 | `604800` | Refresh Token 过期时间（秒） |
-| `mysql.dsn` | string | 是 | - | GORM MySQL DSN |
-| `mysql.max_idle` | int | 否 | `10` | 连接池最大空闲连接数 |
-| `mysql.max_open` | int | 否 | `100` | 连接池最大打开连接数 |
-| `redis.addr` | string | 是 | `127.0.0.1:6379` | Redis 地址 |
-| `redis.password` | string | 否 | - | Redis 密码 |
-| `redis.db` | int | 否 | `0` | Redis 数据库编号 |
-| `storage.provider` | string | 是 | `local` | 存储提供商 |
-| `storage.endpoint` | string | 条件 | - | S3/MinIO Endpoint |
-| `storage.region` | string | 条件 | - | S3/阿里云 Region |
-| `storage.bucket` | string | 是 | - | Bucket 名或本地目录 |
-| `storage.access_key` | string | 条件 | - | 云存储 AccessKey |
-| `storage.secret_key` | string | 条件 | - | 云存储 SecretKey |
-| `storage.public_host` | string | 是 | - | 对外访问的 URL 前缀 |
-| `crypto.key` | string | 是 | - | AES-256-GCM 加密密钥（Base64，32 字节） |
-| `model_gateway.url` | string | 否 | - | LiteLLM / OneAPI 网关地址 |
-| `model_gateway.key` | string | 否 | - | 网关 API Key |
-
-### 4.3 环境变量映射
-
-所有配置项均可通过环境变量覆盖，规则为：将配置路径的点 `.` 替换为下划线 `_`，并转为大写。
-
-| 环境变量 | 对应配置 |
-|----------|----------|
-| `APP_ENV` | `app.env` |
-| `APP_PORT` | `app.port` |
-| `APP_LOG_LEVEL` | `app.log_level` |
-| `JWT_SECRET` | `jwt.secret` |
-| `JWT_EXPIRES_IN` | `jwt.access_expires_in` |
-| `JWT_REFRESH_EXPIRES_IN` | `jwt.refresh_expires_in` |
-| `MYSQL_DSN` | `mysql.dsn` |
-| `MYSQL_MAX_IDLE` | `mysql.max_idle` |
-| `MYSQL_MAX_OPEN` | `mysql.max_open` |
-| `REDIS_ADDR` | `redis.addr` |
-| `REDIS_PASSWORD` | `redis.password` |
-| `REDIS_DB` | `redis.db` |
-| `OSS_PROVIDER` | `storage.provider` |
-| `OSS_ENDPOINT` | `storage.endpoint` |
-| `OSS_REGION` | `storage.region` |
-| `OSS_BUCKET` | `storage.bucket` |
-| `OSS_ACCESS_KEY` | `storage.access_key` |
-| `OSS_SECRET_KEY` | `storage.secret_key` |
-| `OSS_PUBLIC_HOST` | `storage.public_host` |
-| `CRYPTO_KEY` | `crypto.key` |
-| `MODEL_GATEWAY_URL` | `model_gateway.url` |
-| `MODEL_GATEWAY_KEY` | `model_gateway.key` |
-
-### 4.4 生成加密密钥
-
-```bash
-cd /path/to/ai-script/backend
-go run ./cmd/genkey
-# 输出示例：Aix2XN/944vtHhBM5bd2Ibv5SQTCgZ/GwHheRVlwyiQ=
-```
-
----
-
----
-
-## 5. 部署方式
-
-> 平台支持三种部署方式：
-> - **Docker 部署（推荐）**：一键拉起全部依赖，适合开发测试与小型生产环境
-> - **Linux 二进制部署**：高性能、资源可控，适合生产环境
-> - **Windows 二进制部署**：适合 Windows Server 或本地开发机
-
-### 5.1 Docker 部署（推荐）
-
-Docker 部署包含全套依赖（MySQL、Redis、Backend、Worker、Frontend），适合快速验证与小型生产环境。
-
-#### 前置条件
-
-- Docker 20.10+、Docker Compose 2.0+
-- 无需单独安装 MySQL / Redis / FFmpeg
-
-#### 步骤 1：准备环境
-
-```bash
-cd deploy
-cp .env.example .env
-# 编辑 .env，修改 JWT_SECRET 和 CRYPTO_KEY_BASE64
-```
-
-#### 步骤 2：启动全部服务
-
-```bash
-docker compose up -d
-
-# 查看状态
-docker compose ps
-
-# 查看日志
-docker compose logs -f backend
-docker compose logs -f worker
-
-# 停止
-docker compose down
-
-# 停止并清除数据（慎用）
-docker compose down -v
-```
-
-服务启动后访问：
-- 前端：http://localhost/
-- 后端 API：http://localhost:8080
-
-#### 步骤 3：初始化数据
-
-首次启动后，MySQL 会自动执行 `scripts/sql/001_init.sql` 中的 DDL 和种子数据。默认管理员账号为 `admin` / `admin@123`。
-
-#### Docker 单容器部署（高级）
-
-如已有外部 MySQL / Redis，可仅部署 backend / worker 容器：
-
-```bash
-# 构建镜像
 cd backend
-docker build -t ai-script:latest .
-
-# 运行 server
-docker run -d \
-  --name ai-script-server \
-  -p 8080:8080 \
-  -e APP_ENV=prod \
-  -e MYSQL_DSN="aiscript:password@tcp(host.docker.internal:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC" \
-  -e REDIS_ADDR="host.docker.internal:6379" \
-  -e CRYPTO_KEY="your-generated-key" \
-  ai-script:latest
-
-# 运行 worker
-docker run -d \
-  --name ai-script-worker \
-  -e APP_ENV=prod \
-  -e MYSQL_DSN="aiscript:password@tcp(host.docker.internal:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC" \
-  -e REDIS_ADDR="host.docker.internal:6379" \
-  -e CRYPTO_KEY="your-generated-key" \
-  --entrypoint /app/worker \
-  ai-script:latest
-```
-
----
-
-### 5.2 Linux 二进制部署
-
-适合对性能和资源有精确控制需求的生产环境。
-
-#### 编译
-
-```bash
-cd backend
-
-# 安装依赖
-export GOPROXY=https://goproxy.cn,direct
-go mod download
-
-# 构建二进制
-make build
-# 输出：out/server, out/worker
-```
-
-#### 目录结构
-
-```
-/opt/ai-script/
-├── server              # 二进制
-├── worker              # 二进制
-├── configs/
-│   ├── config.yaml     # 配置文件
-│   └── rbac_model.conf # RBAC 模型定义
-├── var/
-│   └── uploads/        # 本地存储目录
-└── logs/               # 日志目录
-```
-
-#### 手动启动
-
-```bash
-export APP_ENV=prod
-export APP_PORT=8080
-export MYSQL_DSN="aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-export REDIS_ADDR="127.0.0.1:6379"
-export CRYPTO_KEY="your-generated-key"
-
-./server
-./worker
-```
-
-#### systemd 服务（推荐）
-
-创建 `/etc/systemd/system/ai-script-server.service`：
-
-```ini
-[Unit]
-Description=AI-Script Server
-After=network.target mysql.service redis.service
-
-[Service]
-Type=simple
-User=ai-script
-Group=ai-script
-WorkingDirectory=/opt/ai-script
-Environment="APP_ENV=prod"
-Environment="APP_PORT=8080"
-Environment="MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-Environment="REDIS_ADDR=127.0.0.1:6379"
-Environment="CRYPTO_KEY=your-generated-key"
-Environment="GIN_MODE=release"
-ExecStart=/opt/ai-script/server
-ExecStop=/bin/kill -SIGTERM $MAINPID
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/var/log/ai-script/server.log
-StandardError=append:/var/log/ai-script/server.log
-
-[Install]
-WantedBy=multi-user.target
-```
-
-创建 `/etc/systemd/system/ai-script-worker.service`：
-
-```ini
-[Unit]
-Description=AI-Script Worker
-After=network.target mysql.service redis.service
-
-[Service]
-Type=simple
-User=ai-script
-Group=ai-script
-WorkingDirectory=/opt/ai-script
-Environment="APP_ENV=prod"
-Environment="MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-Environment="REDIS_ADDR=127.0.0.1:6379"
-Environment="CRYPTO_KEY=your-generated-key"
-ExecStart=/opt/ai-script/worker
-ExecStop=/bin/kill -SIGTERM $MAINPID
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/var/log/ai-script/worker.log
-StandardError=append:/var/log/ai-script/worker.log
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用并启动：
-
-```bash
-sudo useradd -r -s /bin/false ai-script
-sudo mkdir -p /opt/ai-script /var/log/ai-script
-sudo chown -R ai-script:ai-script /opt/ai-script /var/log/ai-script
-
-sudo systemctl daemon-reload
-sudo systemctl enable ai-script-server ai-script-worker
-sudo systemctl start ai-script-server ai-script-worker
-```
-
----
-
-### 5.3 Windows 二进制部署
-
-适合 Windows Server 或本地开发机部署。
-
-#### 编译
-
-```powershell
-# 在 PowerShell 中
-cd backend
-
-# 设置 Go 代理
 $env:GOPROXY = "https://goproxy.cn,direct"
 go mod download
 
-# 构建 Windows 二进制
 $env:CGO_ENABLED = "0"
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
@@ -547,981 +623,604 @@ go build -o out/server.exe ./cmd/server
 go build -o out/worker.exe ./cmd/worker
 ```
 
-#### 目录结构
+### 4.3 目录规划
 
 ```
 C:\ai-script\
-├── server.exe          # 二进制
-├── worker.exe          # 二进制
+├── server.exe
+├── worker.exe
 ├── configs\
-│   ├── config.yaml     # 配置文件
-│   └── rbac_model.conf # RBAC 模型定义
-├── var\
-│   └── uploads\        # 本地存储目录
-└── logs\               # 日志目录
+│   ├── config.yaml
+│   └── rbac_model.conf
+├── var\uploads\         # 本地存储
+└── logs\
 ```
 
-#### 手动启动
+### 4.4 NSSM 注册为 Windows Service
+
+#### 下载 NSSM
 
 ```powershell
-$env:APP_ENV = "prod"
-$env:APP_PORT = "8080"
-$env:MYSQL_DSN = "aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-$env:REDIS_ADDR = "127.0.0.1:6379"
-$env:CRYPTO_KEY = "your-generated-key"
-
-.\server.exe
-.\worker.exe
-```
-
-#### 注册为 Windows Service（推荐）
-
-使用 **NSSM**（Non-Sucking Service Manager）将程序注册为 Windows 服务，支持开机自启、自动重启、日志轮转。
-
-**步骤 1：下载 NSSM**
-
-```powershell
-# 下载 NSSM
 Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile "nssm.zip"
 Expand-Archive -Path "nssm.zip" -DestinationPath "C:\nssm"
 # 将 C:\nssm\win64 加入系统 PATH
 ```
 
-**步骤 2：注册 Server 服务**
+#### 注册 Server 服务(以管理员身份运行 PowerShell)
 
 ```powershell
-# 以管理员身份运行 PowerShell
 nssm install ai-script-server
-# 在弹出的 GUI 中设置：
-#   Path: C:\ai-script\server.exe
+# 在 GUI 中设置:
+#   Path:              C:\ai-script\server.exe
 #   Startup directory: C:\ai-script
-#   Arguments: （留空）
-# 然后点击 "Install service"
 
-# 设置环境变量
-nssm set ai-script-server AppEnvironmentExtra "APP_ENV=prod" "APP_PORT=8080" "MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC" "REDIS_ADDR=127.0.0.1:6379" "CRYPTO_KEY=your-generated-key"
+# 环境变量
+nssm set ai-script-server AppEnvironmentExtra `
+  "APP_ENV=prod" `
+  "APP_PORT=8080" `
+  "APP_LOG_LEVEL=info" `
+  "GIN_MODE=release" `
+  "MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local" `
+  "REDIS_ADDR=127.0.0.1:6379" `
+  "REDIS_PASSWORD=YourRedisPassword" `
+  "JWT_SECRET=your-64-char-random-jwt-secret" `
+  "CRYPTO_KEY=your-32-byte-crypto-key" `
+  "OSS_PROVIDER=local" `
+  "OSS_BUCKET=C:\ai-script\var\uploads" `
+  "OSS_PUBLIC_HOST=/uploads"
 
-# 设置日志输出（可选，NSSM 会自动轮转）
+# 日志(NSSM 自动滚动)
 nssm set ai-script-server AppStdout C:\ai-script\logs\server.log
 nssm set ai-script-server AppStderr C:\ai-script\logs\server.log
+nssm set ai-script-server AppRotateFiles 1
+nssm set ai-script-server AppRotateBytes 10485760
 
-# 启动服务
 nssm start ai-script-server
 ```
 
-**步骤 3：注册 Worker 服务**
+#### 注册 Worker 服务
 
 ```powershell
 nssm install ai-script-worker
-# 在弹出的 GUI 中设置：
-#   Path: C:\ai-script\worker.exe
-#   Startup directory: C:\ai-script
-#   Arguments: （留空）
+# Path: C:\ai-script\worker.exe
+# Startup directory: C:\ai-script
 
-nssm set ai-script-worker AppEnvironmentExtra "APP_ENV=prod" "MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC" "REDIS_ADDR=127.0.0.1:6379" "CRYPTO_KEY=your-generated-key"
+nssm set ai-script-worker AppEnvironmentExtra `
+  "APP_ENV=prod" `
+  "MYSQL_DSN=..." `
+  "REDIS_ADDR=127.0.0.1:6379" `
+  "REDIS_PASSWORD=YourRedisPassword" `
+  "JWT_SECRET=your-64-char-random-jwt-secret" `
+  "CRYPTO_KEY=your-32-byte-crypto-key" `
+  "OSS_PROVIDER=local" `
+  "OSS_BUCKET=C:\ai-script\var\uploads"
+
 nssm set ai-script-worker AppStdout C:\ai-script\logs\worker.log
 nssm set ai-script-worker AppStderr C:\ai-script\logs\worker.log
-
 nssm start ai-script-worker
 ```
 
-**步骤 4：管理服务**
+### 4.5 服务管理
 
 ```powershell
-# 查看状态
+# 状态 / 启停 / 重启
 nssm status ai-script-server
-nssm status ai-script-worker
+nssm stop / nssm start / nssm restart ai-script-server
+nssm remove ai-script-server confirm   # 卸载
 
-# 停止
+# 或用 PowerShell 标准服务命令
+Get-Service ai-script-server, ai-script-worker
+Restart-Service ai-script-server
+```
+
+### 4.6 升级(Windows)
+
+```powershell
+# 停止服务
 nssm stop ai-script-server
 nssm stop ai-script-worker
 
-# 重启
-nssm restart ai-script-server
-nssm restart ai-script-worker
+# 备份 + 替换
+Copy-Item C:\ai-script\server.exe C:\ai-script\server.exe.bak
+Copy-Item C:\ai-script\worker.exe C:\ai-script\worker.exe.bak
+Copy-Item .\out\server.exe C:\ai-script\
+Copy-Item .\out\worker.exe C:\ai-script\
 
-# 删除服务（如需卸载）
-nssm remove ai-script-server confirm
-nssm remove ai-script-worker confirm
+# 启动 + 验证
+nssm start ai-script-server
+nssm start ai-script-worker
+Invoke-WebRequest http://localhost:8080/healthz/ready
 ```
 
-> **提示**：也可以使用 Windows 自带的 `sc.exe` 注册服务，但 NSSM 更灵活，支持环境变量、日志重定向和自动重启。
+### 4.7 Windows 常见问题
+
+| 问题 | 速答 |
+|------|------|
+| `nssm install` 弹不出 GUI | 必须以**管理员身份**运行 PowerShell |
+| 服务起来后立即停止 | 看 `C:\ai-script\logs\server.log`,通常是环境变量没设全 |
+| 中文乱码 | 设置环境变量 `LANG=zh_CN.UTF-8`,或代码层使用 UTC 时区 |
+| FFmpeg not found | `ffmpeg.exe` 没加入 PATH,或服务运行账户没有 PATH 访问权限 |
 
 ---
 
-### 5.4 Kubernetes 部署
+## 5. 部署方式 D:Kubernetes
 
-适合需要高可用、自动扩缩容的生产环境。
+> 适合需要高可用、自动扩缩容、灰度发布的生产环境。
 
-#### Namespace 与 ConfigMap
+### 5.1 现成 K8s 资源清单
+
+仓库已提供完整的 K8s manifests,**直接使用而不要重新拼写**:
+
+```
+deploy/k8s/
+├── namespace.yaml              # Namespace: ai-script
+├── configmap.yaml              # 非敏感配置(APP_ENV / MYSQL_MAX_OPEN / OSS_REGION ...)
+├── secret.yaml                 # 模板 — 部署前必须替换占位符
+├── backend-deployment.yaml     # backend Deployment + Service(replicas: 2,RollingUpdate)
+├── worker-deployment.yaml      # worker Deployment
+├── frontend-deployment.yaml    # frontend Deployment + Service
+└── ingress.yaml                # nginx Ingress + cert-manager TLS
+```
+
+特性已内置:`runAsNonRoot: true` / `readOnlyRootFilesystem` / `capabilities.drop: ALL` / `podAntiAffinity` / `readinessProbe` / `livenessProbe`。
+
+### 5.2 镜像构建与推送
+
+```bash
+# 本地构建
+cd backend
+docker build -t registry.example.com/ai-script/backend:v1.0.0 .
+docker push registry.example.com/ai-script/backend:v1.0.0
+
+cd ../frontend
+docker build -t registry.example.com/ai-script/frontend:v1.0.0 .
+docker push registry.example.com/ai-script/frontend:v1.0.0
+```
+
+> 也可以由 [§6 CI/CD](#6-cicd-流水线github-actions) 自动构建并推送到 `ghcr.io`。
+
+修改 `deploy/k8s/backend-deployment.yaml` / `frontend-deployment.yaml` 中的 `image:` 字段,指向你的镜像 registry。
+
+### 5.3 准备 ConfigMap / Secret
+
+#### ConfigMap(非敏感)
+
+`deploy/k8s/configmap.yaml` 已经写好默认值,根据生产环境调整:
 
 ```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ai-script
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ai-script-config
-  namespace: ai-script
 data:
-  config.yaml: |
-    app:
-      name: ai-script
-      env: prod
-      port: 8080
-      log_level: info
-    jwt:
-      secret: "k8s-secret-from-secrets"
-      access_expires_in: 7200
-      refresh_expires_in: 604800
-    mysql:
-      dsn: "aiscript:password@tcp(mysql.ai-script.svc.cluster.local:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-      max_idle: 10
-      max_open: 100
-    redis:
-      addr: "redis.ai-script.svc.cluster.local:6379"
-      password: ""
-      db: 0
-    storage:
-      provider: s3
-      endpoint: ""
-      region: "cn-hangzhou"
-      bucket: "ai-script"
-      access_key: ""
-      secret_key: ""
-      public_host: "https://ai-script.oss-cn-hangzhou.aliyuncs.com"
-    crypto:
-      key: "k8s-crypto-from-secrets"
-    model_gateway:
-      url: ""
-      key: ""
+  APP_ENV: "production"
+  APP_LOG_LEVEL: "info"
+  MYSQL_MAX_OPEN: "100"
+  OSS_PROVIDER: "oss"
+  OSS_REGION: "cn-hangzhou"
+  OSS_BUCKET: "ai-script-prod"
+  # ...其余见文件
 ```
 
-#### Secret（敏感信息）
+#### Secret(敏感)
+
+`deploy/k8s/secret.yaml` 是**模板**,所有值是 `BASE64_ENCODED_xxx` 占位符,**必须替换**:
 
 ```bash
-# 生成 base64 编码的 secret
-kubectl create secret generic ai-script-secrets \
-  -n ai-script \
-  --from-literal=jwt-secret="your-64-char-random-jwt-secret" \
-  --from-literal=crypto-key="your-generated-crypto-key" \
-  --from-literal=oss-access-key="your-oss-ak" \
-  --from-literal=oss-secret-key="your-oss-sk" \
-  --from-literal=model-gateway-key="your-gateway-key"
+# 替换方式 A:命令行生成(推荐)
+kubectl create secret generic ai-script-secret -n ai-script \
+  --from-literal=MYSQL_DSN="aiscript:password@tcp(mysql:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local" \
+  --from-literal=REDIS_PASSWORD="YourRedisPwd" \
+  --from-literal=JWT_SECRET="$(openssl rand -base64 48)" \
+  --from-literal=CRYPTO_KEY="$(openssl rand -base64 32 | head -c 32)" \
+  --from-literal=OSS_ENDPOINT="oss-cn-hangzhou.aliyuncs.com" \
+  --from-literal=OSS_ACCESS_KEY="your-oss-ak" \
+  --from-literal=OSS_SECRET_KEY="your-oss-sk" \
+  --from-literal=MODEL_GATEWAY_URL="https://your-litellm.example.com/v1" \
+  --from-literal=MODEL_GATEWAY_KEY="sk-your-gateway-key" \
+  --from-literal=MIGRATE_DSN="aiscript:password@tcp(mysql:3306)/ai_script" \
+  --from-literal=MIGRATE_SOURCE="file:///app/migrations"
+
+# 替换方式 B:在 secret.yaml 中手动 base64 编码后填入
+echo -n 'your-value' | base64
 ```
 
-#### Server Deployment + Service + Ingress
+### 5.4 数据存储
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ai-script-server
-  namespace: ai-script
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: ai-script-server
-  template:
-    metadata:
-      labels:
-        app: ai-script-server
-    spec:
-      containers:
-        - name: server
-          image: your-registry/ai-script:latest
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 8080
-          env:
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: jwt-secret
-            - name: CRYPTO_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: crypto-key
-            - name: OSS_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: oss-access-key
-            - name: OSS_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: oss-secret-key
-            - name: MODEL_GATEWAY_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: model-gateway-key
-          volumeMounts:
-            - name: config
-              mountPath: /app/configs
-              readOnly: true
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 15
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "250m"
-            limits:
-              memory: "1Gi"
-              cpu: "1000m"
-      volumes:
-        - name: config
-          configMap:
-            name: ai-script-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ai-script-server
-  namespace: ai-script
-spec:
-  selector:
-    app: ai-script-server
-  ports:
-    - port: 80
-      targetPort: 8080
-  type: ClusterIP
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ai-script-ingress
-  namespace: ai-script
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
-spec:
-  rules:
-    - host: api.ai-script.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: ai-script-server
-                port:
-                  number: 80
-```
+K8s 默认不带 MySQL/Redis。生产建议:
 
-#### Worker Deployment
+| 组件 | 推荐做法 |
+|------|---------|
+| MySQL | 使用云厂商托管(RDS / PolarDB / Aurora)而非 in-cluster |
+| Redis | 同上,使用云托管 Redis 集群 |
+| 对象存储 | 阿里云 OSS / AWS S3 / 腾讯云 COS,通过 OSS_* secret 注入 |
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ai-script-worker
-  namespace: ai-script
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: ai-script-worker
-  template:
-    metadata:
-      labels:
-        app: ai-script-worker
-    spec:
-      containers:
-        - name: worker
-          image: your-registry/ai-script:latest
-          imagePullPolicy: Always
-          command: ["/app/worker"]
-          env:
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: jwt-secret
-            - name: CRYPTO_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: crypto-key
-            - name: OSS_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: oss-access-key
-            - name: OSS_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: oss-secret-key
-            - name: MODEL_GATEWAY_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ai-script-secrets
-                  key: model-gateway-key
-          volumeMounts:
-            - name: config
-              mountPath: /app/configs
-              readOnly: true
-          resources:
-            requests:
-              memory: "512Mi"
-              cpu: "500m"
-            limits:
-              memory: "2Gi"
-              cpu: "2000m"
-      volumes:
-        - name: config
-          configMap:
-            name: ai-script-config
-```
+如必须 in-cluster,使用 StatefulSet + PersistentVolumeClaim,不在本指南范围。
 
-#### 部署命令
+### 5.5 部署命令
 
 ```bash
-kubectl apply -f namespace.yaml
-kubectl apply -f configmap.yaml
-kubectl apply -f secrets.yaml
-kubectl apply -f server-deployment.yaml
-kubectl apply -f worker-deployment.yaml
+# 按顺序 apply
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/configmap.yaml
+# secret 用命令行已经创建则跳过 secret.yaml
+kubectl apply -f deploy/k8s/backend-deployment.yaml
+kubectl apply -f deploy/k8s/worker-deployment.yaml
+kubectl apply -f deploy/k8s/frontend-deployment.yaml
+kubectl apply -f deploy/k8s/ingress.yaml
 
 # 查看状态
 kubectl get pods -n ai-script
-kubectl logs -f deployment/ai-script-server -n ai-script
-kubectl logs -f deployment/ai-script-worker -n ai-script
-```
-
----
-
-## 6. 数据库初始化与迁移
-
-### 6.1 自动迁移（MVP 阶段）
-
-server / worker 启动时会自动执行 GORM AutoMigrate，创建所有业务表。该方式**只增不删**，适合 MVP 阶段快速迭代。
-
-涉及的表：
-- `users`, `departments`, `roles`, `projects`, `project_members`
-- `user_api_tokens`, `permissions`, `role_permissions`, `user_roles`
-- `models`
-- `scripts`, `script_versions`, `episodes`, `episode_prompts`
-- `storyboards`, `styles`, `storyboard_styles`
-- `images`, `short_videos`, `full_videos`
-- `pipelines`, `pipeline_runs`, `step_runs`
-- `review_flows`, `review_nodes`, `review_records`, `review_node_records`
-- `publishes`
-- `model_pricings`, `model_invocations`
-- `billing_quotas`, `billing_dailies`
-- `audit_logs`, `sys_dicts`
-
-### 6.2 生产环境迁移建议
-
-生产环境建议使用 **golang-migrate** 或 **Atlas** 管理 schema 变更：
-
-```bash
-# 安装 golang-migrate
-go install -tags 'mysql' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-
-# 创建迁移文件
-migrate create -ext sql -dir migrations -seq init_schema
-
-# 执行迁移
-migrate -path migrations -database "mysql://aiscript:password@tcp(localhost:3306)/ai_script" up
-
-# 回滚
-migrate -path migrations -database "mysql://aiscript:password@tcp(localhost:3306)/ai_script" down 1
-```
-
-### 6.3 初始化数据
-
-首次部署后，建议执行以下初始化：
-
-```sql
--- 创建系统管理员
-INSERT INTO users (username, password_hash, nickname, email, status, created_at, updated_at)
-VALUES ('admin', '$2a$10$...bcrypt-hash...', '系统管理员', 'admin@example.com', 1, NOW(), NOW());
-
--- 创建默认角色
-INSERT INTO roles (code, name, description, status, created_at, updated_at)
-VALUES ('admin', '管理员', '系统管理员', 1, NOW(), NOW()),
-       ('user', '普通用户', '普通用户', 1, NOW(), NOW());
-```
-
----
-
-## 7. 启动与停止
-
-### 7.1 手动启动
-
-**Linux**
-
-```bash
-# 前台启动（调试）
-./server
-./worker
-
-# 后台启动（nohup）
-nohup ./server > logs/server.log 2>&1 &
-nohup ./worker > logs/worker.log 2>&1 &
-```
-
-**Windows**
-
-```powershell
-# 前台启动（PowerShell）
-.\server.exe
-.\worker.exe
-
-# 后台启动（使用 Start-Process）
-Start-Process -FilePath ".\server.exe" -RedirectStandardOutput "logs\server.log" -RedirectStandardError "logs\server.log" -WindowStyle Hidden
-Start-Process -FilePath ".\worker.exe" -RedirectStandardOutput "logs\worker.log" -RedirectStandardError "logs\worker.log" -WindowStyle Hidden
-```
-
-### 7.2 systemd 服务文件
-
-创建 `/etc/systemd/system/ai-script-server.service`：
-
-```ini
-[Unit]
-Description=AI-Script Server
-After=network.target mysql.service redis.service
-
-[Service]
-Type=simple
-User=ai-script
-Group=ai-script
-WorkingDirectory=/opt/ai-script
-Environment="APP_ENV=prod"
-Environment="APP_PORT=8080"
-Environment="MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-Environment="REDIS_ADDR=127.0.0.1:6379"
-Environment="CRYPTO_KEY=your-generated-key"
-Environment="GIN_MODE=release"
-ExecStart=/opt/ai-script/server
-ExecStop=/bin/kill -SIGTERM $MAINPID
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/var/log/ai-script/server.log
-StandardError=append:/var/log/ai-script/server.log
-
-[Install]
-WantedBy=multi-user.target
-```
-
-创建 `/etc/systemd/system/ai-script-worker.service`：
-
-```ini
-[Unit]
-Description=AI-Script Worker
-After=network.target mysql.service redis.service
-
-[Service]
-Type=simple
-User=ai-script
-Group=ai-script
-WorkingDirectory=/opt/ai-script
-Environment="APP_ENV=prod"
-Environment="MYSQL_DSN=aiscript:password@tcp(127.0.0.1:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=UTC"
-Environment="REDIS_ADDR=127.0.0.1:6379"
-Environment="CRYPTO_KEY=your-generated-key"
-ExecStart=/opt/ai-script/worker
-ExecStop=/bin/kill -SIGTERM $MAINPID
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/var/log/ai-script/worker.log
-StandardError=append:/var/log/ai-script/worker.log
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### 启用服务
-
-```bash
-sudo useradd -r -s /bin/false ai-script
-sudo mkdir -p /opt/ai-script /var/log/ai-script
-sudo chown -R ai-script:ai-script /opt/ai-script /var/log/ai-script
-
-sudo systemctl daemon-reload
-sudo systemctl enable ai-script-server ai-script-worker
-sudo systemctl start ai-script-server ai-script-worker
-
-# 查看状态
-sudo systemctl status ai-script-server
-sudo systemctl status ai-script-worker
+kubectl get svc,ing -n ai-script
 
 # 查看日志
-sudo journalctl -u ai-script-server -f
-sudo journalctl -u ai-script-worker -f
-
-# 重启
-sudo systemctl restart ai-script-server
-sudo systemctl restart ai-script-worker
+kubectl logs -f deploy/backend -n ai-script
+kubectl logs -f deploy/worker  -n ai-script
 ```
 
-### 7.3 Windows Service 管理
-
-如使用 NSSM 注册为 Windows Service（见 §5.3）：
-
-```powershell
-# 查看状态
-nssm status ai-script-server
-nssm status ai-script-worker
-
-# 停止
-nssm stop ai-script-server
-nssm stop ai-script-worker
-
-# 重启
-nssm restart ai-script-server
-nssm restart ai-script-worker
-
-# 删除服务（卸载）
-nssm remove ai-script-server confirm
-nssm remove ai-script-worker confirm
-```
-
-也可通过 Windows 服务管理器（`services.msc`）或 PowerShell 管理：
-
-```powershell
-# PowerShell
-Get-Service ai-script-server, ai-script-worker
-Stop-Service ai-script-server, ai-script-worker
-Start-Service ai-script-server, ai-script-worker
-Restart-Service ai-script-server, ai-script-worker
-```
-
-### 7.4 优雅停止
-
-server 与 worker 均监听 `SIGINT` / `SIGTERM`，收到信号后：
-- server：在 10 秒内完成正在处理的 HTTP 请求后退出
-- worker：停止消费新任务，等待当前任务完成后退出
-
-**Linux**
+### 5.6 滚动升级与回滚
 
 ```bash
-# 优雅停止
-sudo systemctl stop ai-script-server
-sudo systemctl stop ai-script-worker
+# 滚动升级
+kubectl set image -n ai-script deploy/backend backend=registry.example.com/ai-script/backend:v1.1.0
+kubectl set image -n ai-script deploy/worker  worker=registry.example.com/ai-script/backend:v1.1.0
 
-# 强制停止（慎用）
-sudo systemctl kill -s SIGKILL ai-script-server
+# 监控滚动状态
+kubectl rollout status -n ai-script deploy/backend
+kubectl rollout status -n ai-script deploy/worker
+
+# 回滚到上一版
+kubectl rollout undo -n ai-script deploy/backend
+kubectl rollout undo -n ai-script deploy/worker
+
+# 回滚到指定 revision
+kubectl rollout history -n ai-script deploy/backend
+kubectl rollout undo -n ai-script deploy/backend --to-revision=2
 ```
 
-**Windows**
+### 5.7 K8s 常见问题
 
-```powershell
-# NSSM 会自动发送 CTRL_CLOSE_EVENT，程序捕获后优雅退出
-nssm stop ai-script-server
-nssm stop ai-script-worker
-
-# 强制停止（任务管理器或 PowerShell）
-Stop-Process -Name "server" -Force
-Stop-Process -Name "worker" -Force
-```
+| 问题 | 速答 |
+|------|------|
+| Pod `CrashLoopBackOff` | `kubectl describe pod -n ai-script <pod>` + `kubectl logs --previous`;通常是 Secret 占位符没替换 |
+| `ImagePullBackOff` | 私有 registry 缺 imagePullSecret;`kubectl create secret docker-registry regcred ...` 后在 spec 中引用 |
+| Ingress 不通 | 集群没装 ingress-nginx 控制器,或域名没指到 LB;`kubectl get ingress -n ai-script` 看 ADDRESS 列 |
+| TLS 证书没签发 | cert-manager 未装,或 ClusterIssuer 名字不是 `letsencrypt-prod`,修改 `ingress.yaml` 注解 |
+| `secret.yaml` 模板原样 apply 失败 | `data:` 字段值不是合法 base64;用命令行 `kubectl create secret generic ...` 跳过模板 |
 
 ---
 
-## 8. 监控与日志
+## 6. CI/CD 流水线(GitHub Actions)
 
-### 8.1 日志配置
+### 6.1 流水线总览
 
-日志基于 **Zap** 实现：
+文件:`.github/workflows/ci.yml`(后端)。触发条件:
 
-- `env=prod`：JSON 格式输出，适合日志收集系统（ELK / Loki）
-- `env=dev`：带颜色的控制台输出，便于本地调试
+- `push` 到 `main` / `master` / `develop`,且 `backend/**` 或 `.github/workflows/**` 有改动
+- 同样路径的 PR
 
-日志级别：`debug` < `info` < `warn` < `error`
+| Job | 内容 | 是否阻塞合入 |
+|-----|------|------------|
+| **lint** | `golangci-lint` 静态检查(配置:`backend/.golangci.yml`) | ✅ |
+| **test** | 起 MySQL + Redis service,跑 `go test ./... -race -coverprofile=coverage.out`,上报 Codecov | ✅ |
+| **security** | `gosec` 安全扫描,产物上传到 GitHub Security 标签 | ❌(`-no-fail`) |
+| **build** | 构建 `server` + `worker` 二进制,产物 `backend/out/` 上传 artifact | ✅(依赖 lint/test) |
+| **docker** | `docker buildx` 构建多架构镜像(amd64 + arm64),推送到 `ghcr.io/<owner>/<repo>/backend` | 仅 `push` 触发 |
 
-### 8.2 日志位置
+### 6.2 镜像 tag 规则
 
-| 部署方式 | 日志位置 |
-|----------|----------|
-| 手动启动 (Linux) | 标准输出 / nohup.out |
-| 手动启动 (Windows) | PowerShell 窗口 / 重定向文件 |
-| systemd | `/var/log/ai-script/*.log` 或 `journalctl` |
-| Windows Service | `C:\ai-script\logs\*.log` |
-| Docker | `docker logs <container>` |
-| K8s | `kubectl logs <pod>` |
+镜像名:`ghcr.io/<owner>/<repo>/backend`
 
-### 8.3 健康检查端点
+| Tag | 含义 |
+|-----|------|
+| `<branch>` | 分支推送时打 |
+| `<branch>-<sha>` | 提交 SHA(short) |
+| `latest` | 仅 default branch(main) |
+
+### 6.3 集成到部署
 
 ```bash
-curl http://localhost:8080/healthz
-# 返回：{"status":"ok"}
+# K8s 部署使用 CI 镜像
+kubectl set image -n ai-script deploy/backend \
+  backend=ghcr.io/<owner>/<repo>/backend:main-abc1234
+
+# Docker Compose 用 CI 镜像(替代本地 build)
+# 修改 deploy/docker-compose.yml:
+#   image: ghcr.io/<owner>/<repo>/backend:latest
+# 并去掉 build: 段
 ```
 
-### 8.4 关键监控指标
+> **注意**:本流水线**只构建后端镜像**,前端镜像构建尚未配入 CI。如需 CI 构建前端,新增 `frontend-ci.yml`,使用 `frontend/Dockerfile`。
+
+---
+
+## 7. 部署后验收
+
+### 7.1 健康检查端点
+
+| 端点 | 用途 | 返回 |
+|------|------|------|
+| `GET /healthz/live` | **Liveness 探针**(K8s/Docker) — 进程存活即 200 | `{"status":"ok"}` |
+| `GET /healthz/ready` | **Readiness 探针** — 含 DB + Redis ping | 200 `{"status":"ok"}` 或 503 `{"status":"unhealthy","errors":[...]}` |
+| `GET /metrics` | Prometheus 文本格式指标(runtime + 业务) | 文本 |
+
+```bash
+curl http://localhost:8080/healthz/live    # 必须 200
+curl http://localhost:8080/healthz/ready   # 必须 200,503 表示 DB/Redis 异常
+```
+
+> ⚠️ **历史 bug**:`backend/Dockerfile` 的 `HEALTHCHECK` 仍指向 `/healthz`(不存在),容器 `unhealthy`。修复方案见 §9.2 第 6 条。
+
+### 7.2 冒烟测试
+
+仓库内 `scripts/smoke.sh` 是端到端 smoke 测试,登录后探测 16 个关键 GET 端点:
+
+```bash
+# 默认 BASE_URL=http://localhost:8080
+./scripts/smoke.sh
+
+# 自定义
+BASE_URL=https://api.example.com USERNAME=admin PASSWORD=admin123 ./scripts/smoke.sh
+```
+
+依赖:`bash` / `curl` / `jq`(Windows 用 git-bash)。
+
+退出码 0 = 全通,非 0 = 第一个失败就退。
+
+### 7.3 验收清单(任何部署方式都要走一遍)
+
+- [ ] `curl /healthz/live` 返回 200
+- [ ] `curl /healthz/ready` 返回 200(DB + Redis 都通)
+- [ ] 默认账号 `admin/admin123` 能登录 — **立即修改密码**
+- [ ] `./scripts/smoke.sh` 全通(16/16)
+- [ ] 上传一张图片 → 能在 storage 中看到文件
+- [ ] 创建一个 Pipeline Run → worker 能消费(查 worker 日志有 `task accepted`)
+- [ ] WebSocket `/ws/pipeline-runs/{run_id}` 能收到进度推送
+- [ ] 日志无 ERROR 级别输出(`grep ERROR logs/server.log`)
+
+---
+
+## 8. 运维通用项
+
+### 8.1 日志位置速查
+
+| 部署方式 | 位置 / 命令 |
+|---------|------------|
+| 根 docker compose | `docker compose logs -f server worker` |
+| deploy docker compose | `docker compose logs -f backend worker` |
+| Linux systemd | `journalctl -u ai-script-server -f` 或 `/var/log/ai-script/server.log` |
+| Windows NSSM | `C:\ai-script\logs\server.log` |
+| K8s | `kubectl logs -f deploy/backend -n ai-script` |
+
+日志格式:`app.env=prod` 时 JSON(适配 ELK/Loki),`env=dev` 时彩色控制台。
+
+### 8.2 监控指标
 
 | 指标 | 检查方式 | 告警阈值 |
-|------|----------|----------|
-| HTTP 服务可用 | `curl /healthz` | 连续 3 次失败 |
-| MySQL 连接 | 业务日志 | 连接超时 |
-| Redis 连接 | 业务日志 | 连接超时 |
-| 任务队列积压 | Redis `LLEN asynq:{default}` | > 1000 |
+|------|---------|---------|
+| HTTP 可用性 | `curl /healthz/live`(连续 3 次失败告警) | - |
+| 数据依赖健康 | `curl /healthz/ready`(503 告警) | - |
+| 任务队列积压 | `redis-cli LLEN asynq:{default}` | > 1000 |
+| MySQL 连接数 | `SHOW STATUS LIKE 'Threads_connected'` | > 80% `max_connections` |
+| Redis 内存 | `redis-cli INFO memory` | > 80% maxmemory |
 | 磁盘空间 | `df -h` | > 80% |
-| 内存使用 | `free -m` | > 85% |
+| Prometheus | `GET /metrics`(集成 Prometheus + Grafana) | 自定义 |
 
-### 8.5 Prometheus 监控（扩展）
+### 8.3 备份与恢复
 
-如需接入 Prometheus，可在 Gin 路由中增加 `/metrics` 端点，暴露 Go runtime 与业务自定义指标。
-
----
-
-## 9. 备份与恢复策略
-
-### 9.1 MySQL 备份
+#### MySQL 每日全量
 
 ```bash
-# 每日全量备份（crontab）
-0 2 * * * mysqldump -u aiscript -p'password' --single-transaction --routines ai_script > /backup/ai-script-$(date +\%Y\%m\%d).sql
+# 定时任务(crontab -e)
+0 2 * * * mysqldump -u aiscript -p'password' --single-transaction --routines ai_script | gzip > /backup/ai-script-$(date +\%Y\%m\%d).sql.gz
 
 # 保留 7 天
-find /backup -name "ai-script-*.sql" -mtime +7 -delete
-
-# 压缩备份
-mysqldump -u aiscript -p'password' --single-transaction ai_script | gzip > /backup/ai-script-$(date +%Y%m%d).sql.gz
+0 3 * * * find /backup -name "ai-script-*.sql.gz" -mtime +7 -delete
 ```
 
-### 9.2 MySQL 恢复
+恢复:
 
 ```bash
-# 恢复全量备份
-mysql -u aiscript -p ai_script < /backup/ai-script-20260512.sql
-
-# 恢复压缩备份
-gunzip < /backup/ai-script-20260512.sql.gz | mysql -u aiscript -p ai_script
+gunzip < /backup/ai-script-20260513.sql.gz | mysql -u aiscript -p ai_script
 ```
 
-### 9.3 Redis 备份
+#### Redis
 
 ```bash
-# 开启 AOF 持久化（/etc/redis/redis.conf）
-appendonly yes
+# 启用 AOF
+echo "appendonly yes" >> /etc/redis/redis.conf
+sudo systemctl restart redis-server
 
-# 手动触发 RDB 保存
+# 手动快照
 redis-cli BGSAVE
-
-# 备份 RDB 文件
 cp /var/lib/redis/dump.rdb /backup/redis-$(date +%Y%m%d).rdb
 ```
 
-### 9.4 对象存储备份
+#### 对象存储
 
-- **本地存储**：定期 rsync 到备份服务器
-- **云存储**：开启版本控制（Versioning）与跨区域复制
-- **MinIO**：使用 `mc mirror` 同步到备份 bucket
+- 本地存储:rsync 定期同步到备份服务器
+- 云存储:开启 versioning + 跨区域复制
+- MinIO:`mc mirror local/ai-script backup/ai-script-backup`
 
-```bash
-mc mirror local/ai-script backup/ai-script-backup
-```
-
-### 9.5 配置文件备份
+#### 配置 / 密钥
 
 ```bash
-tar czf /backup/ai-script-config-$(date +%Y%m%d).tar.gz /opt/ai-script/configs /opt/ai-script/.env
+tar czf /backup/ai-script-config-$(date +%Y%m%d).tar.gz \
+  /opt/ai-script/configs \
+  /opt/ai-script/.env
+chmod 600 /backup/ai-script-config-*.tar.gz
 ```
+
+### 8.4 安全加固
+
+| 项 | 建议 |
+|----|------|
+| **JWT_SECRET** | `openssl rand -base64 48`,>= 64 字符,每 90 天轮换 |
+| **CRYPTO_KEY** | 永远不要提交到 git;K8s 用 Secret;裸机用 600 权限的 .env |
+| **数据库** | 禁止 root 远程登录;业务用户最小权限;启用 SSL/TLS;定期改密 |
+| **Redis** | 绑定 127.0.0.1 或内网;设 `requirepass`;`bind` + `protected-mode yes` |
+| **HTTPS** | Nginx / Ingress 反代;不要让 8080 直接对公网 |
+| **CORS** | 生产关闭 `AllowAllOrigins`,改白名单 |
+| **对象存储** | bucket 不公开;用预签名 URL |
+| **容器** | 使用非 root(`appuser:1000`);定期 `trivy image ai-script-backend:latest` 扫漏洞 |
+| **RBAC** | 数据库预置角色-权限;敏感操作二次确认;定期审计 |
+
+### 8.5 数据库 Schema 迁移(生产建议)
+
+GORM AutoMigrate 只增不删,不适合长期生产。建议改用 **golang-migrate**:
+
+```bash
+# 安装
+go install -tags 'mysql' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# 创建新迁移
+migrate create -ext sql -dir backend/migrations -seq add_xxx_column
+
+# 执行
+migrate -path backend/migrations \
+  -database "mysql://aiscript:password@tcp(localhost:3306)/ai_script" up
+
+# 回滚一个版本
+migrate -path backend/migrations \
+  -database "mysql://aiscript:password@tcp(localhost:3306)/ai_script" down 1
+```
+
+K8s 中可以用 `Job` 在新版本上线前先跑迁移,或者在 backend 启动时通过 `MIGRATE_MODE=manual` 跳过 AutoMigrate(已经在 `deploy/k8s/configmap.yaml` 中预留 `MIGRATE_MODE` 字段)。
 
 ---
 
-## 10. 故障排查手册
+## 9. FAQ — 常见问题速答
+
+### 9.1 环境与依赖
 
-### 10.1 服务无法启动
+**Q1: Go 版本到底是多少?**
+`go.mod` 锁定 `1.24.0`,这是事实标准。本机编译与镜像构建均需要 Go 1.24+。
 
-**现象**：执行 `./server` 后立即退出
+**Q2: 必须装 FFmpeg 吗?**
+B/C 二进制部署必装(系统级);A 容器部署不用(`backend/Dockerfile` 通过 `apk add ffmpeg` 内置);D K8s 用同一个 backend 镜像,自动包含。
 
-**排查步骤**：
+**Q3: 必须装 MinIO 吗?**
+不必须。三选一:本地文件系统(开发用)、MinIO(自建对象存储)、阿里云 OSS / AWS S3 / 腾讯云 COS。配置 `OSS_PROVIDER` 切换:`local` / `minio` / `oss` / `s3` / `cos`。
 
-```bash
-# 1. 检查配置文件是否存在
-ls -la configs/config.yaml
+**Q4: 必须有模型网关(LiteLLM/OneAPI)吗?**
+对于实际生成图片/视频的功能 → 必须。仅做接口联调 → 可空着 `MODEL_GATEWAY_URL/KEY`,但相关接口会报错。
 
-# 2. 检查环境变量
-echo $MYSQL_DSN $REDIS_ADDR $CRYPTO_KEY
+### 9.2 启动失败类
 
-# 3. 检查依赖服务
-mysql -u aiscript -p -e "SELECT 1"
-redis-cli ping
+**Q1: `JWT_SECRET is required` / `MYSQL_DSN is required`**
+.env 没填或填错。检查:`.env` 文件是否存在 / 是否在 compose 同目录 / 变量名是否拼错(根 compose 用 `MYSQL_ROOT_PWD`,deploy compose 用 `MYSQL_ROOT_PASSWORD`,**不通用**)。
 
-# 4. 查看详细日志
-./server 2>&1 | head -50
-```
+**Q2: `CRYPTO_KEY` 长度报错**
+- 走 `CRYPTO_KEY` 路径:必须正好 **32 字节明文**(不是 32 字符的可见字符,而是字节)
+- 走 `CRYPTO_KEY_BASE64` 路径:必须是 32 字节的 **base64 编码字符串**(`openssl rand -base64 32`)
+- 两者**二选一**
 
-**常见原因**：
-- `configs/config.yaml` 不存在或权限不足
-- `MYSQL_DSN` 为空或格式错误
-- `CRYPTO_KEY` 为空或长度不对
-- MySQL / Redis 未启动或网络不通
+**Q3: `Error 1045: Access denied` 连不上 MySQL**
+1. 用户名/密码错;
+2. 用户没远程权限:`GRANT ALL ON ai_script.* TO 'aiscript'@'%'`;
+3. 容器内访问:DSN 用容器名 `tcp(mysql:3306)`,不是 `127.0.0.1`。
 
-### 10.2 HTTP 请求无响应
+**Q4: `dial tcp [::1]:6379: connection refused` 连不上 Redis**
+- 裸机:`sudo systemctl status redis-server`
+- Docker:`REDIS_ADDR` 应该是容器名 `redis:6379`,不是 `localhost`
+- 远程 Redis:防火墙、`bind` 配置、`requirepass` 三项核对
 
-**排查步骤**：
+**Q5: server 启动后立即退出,无明显报错**
+- systemd:`journalctl -u ai-script-server -n 200` 看完整日志
+- NSSM:看 `C:\ai-script\logs\server.log`
+- Docker:`docker compose logs server`
+- 常见根因:`configs/config.yaml` 不存在 / 权限不足 / `CRYPTO_KEY` 格式错
 
-```bash
-# 1. 检查端口监听
-ss -tlnp | grep 8080
+**Q6: Docker 容器一直 `unhealthy` / Compose `depends_on` 卡住**
+`backend/Dockerfile` 的 `HEALTHCHECK` 写的是 `http://127.0.0.1:8080/healthz`,但代码里实际只有 `/healthz/live` 和 `/healthz/ready`。两个解决方案:
+- 修 Dockerfile,把 `HEALTHCHECK` 改为 `/healthz/live`(根本修复)
+- 或在 compose 的 `healthcheck.test` 覆盖容器内置健康检查(本仓库的 compose 已经这样做了,所以 compose 启动是 OK 的,只是直接 `docker run` 会卡)
 
-# 2. 健康检查
-curl -v http://localhost:8080/healthz
+### 9.3 配置类
 
-# 3. 查看日志
-tail -f logs/server.log
+**Q1: 三个 `.env.example` 用哪个?**
+见 [§1.4](#14-envexample-三个文件指引)。简单说:用根 compose → 根 `.env.example`;用 deploy compose → `deploy/.env.example`;裸机/Windows → `backend/.env.example`。
 
-# 4. 检查防火墙
-sudo iptables -L -n | grep 8080
-```
+**Q2: 两个 Makefile 怎么选?**
+- 根 `Makefile`:打包 backend + frontend + compose 操作,适合**整个项目**层面
+- `backend/Makefile`:只管 backend,带 `help` 自描述,适合**后端开发者**
+- 同名命令行为不同:根 `make docker` = `docker compose build`,`backend/make docker` = `docker build -t ai-script:latest .`
 
-### 10.3 Worker 不消费任务
+**Q3: 改了 .env 不生效?**
+- Docker:必须 `down` 后 `up -d`,`restart` 不会重读 env_file
+- systemd:改了 `EnvironmentFile` 后 `systemctl daemon-reload` + `systemctl restart`
+- NSSM:`nssm set <svc> AppEnvironmentExtra ...` 后 `nssm restart`
 
-**排查步骤**：
+**Q4: 时区不对(显示 UTC)**
+- MySQL 容器命令行已加 `--default-time-zone=+08:00`
+- 应用层:DSN 加 `loc=Local`(注:目前 deploy compose 是 `loc=Local`,旧 ops-guide 写的 `loc=UTC` 是历史值)
+- 容器层:`TZ=Asia/Shanghai` 环境变量
 
-```bash
-# 1. 检查 worker 进程是否存在
-ps aux | grep worker
+### 9.4 性能与资源
 
-# 2. 检查 Redis 队列
-redis-cli LLEN asynq:{default}
-redis-cli LLEN asynq:{critical}
+**Q1: Worker 不消费任务**
+1. worker 进程死了:`ps aux | grep worker` / `kubectl get pods | grep worker`
+2. Redis DB 编号不一致:server 和 worker 的 `REDIS_DB` 必须相同
+3. 任务 handler panic:看 worker 日志最后几行
+4. 队列名错:Asynq 默认队列 `asynq:{default}`,用 `redis-cli LLEN asynq:{default}` 看积压
 
-# 3. 检查 Asynq 监控面板（如已部署）
-# asynqmon 可查看队列状态
+**Q2: 媒体合成 OOM**
+- FFmpeg 默认会吃满 CPU 和大量内存
+- Docker:在 deploy compose 加大 worker 的 `deploy.resources.limits.memory`(默认 1G,可调到 4G)
+- K8s:同理调 `worker-deployment.yaml`
+- 长任务超时:调 ConfigMap 的 `TIMEOUT_VIDEO_COMPOSE`(秒)
 
-# 4. 查看 worker 日志
-tail -f logs/worker.log
-```
+**Q3: MySQL 连接耗尽**
+- 调 `MYSQL_MAX_OPEN`(默认 100)
+- 检查 `MYSQL_CONN_MAX_LIFETIME`(默认 3600s),避免老连接挂死
+- MySQL 服务端 `max_connections`(compose 里设了 500,生产可加大)
 
-**常见原因**：
-- worker 未启动或崩溃
-- Redis DB 与 server 不一致
-- 任务 handler 未注册（panic 导致 worker 退出）
+### 9.5 网络与权限
 
-### 10.4 数据库连接报错
+**Q1: 前端访问后端跨域报错**
+- 开发环境:`frontend/.env.example` 的 `VITE_API_BASE` 指向后端
+- 生产环境:让 nginx/Ingress 把 `/api` 与 `/ws` 反代给 backend(K8s 的 `ingress.yaml` 已经这么做)
+- 不要在生产 CORS 设 `AllowAllOrigins`
 
-```
-[mysql] failed to initialize database, got error Error 1045: Access denied
-```
+**Q2: WebSocket 连不上**
+- nginx 需要加 `Upgrade` / `Connection` 头
+- Ingress 注解可能需要 `nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"`
+- 反代后路径要保持 `/ws/...`
 
-**解决**：
-- 检查 DSN 用户名/密码
-- 确认 MySQL 用户权限：`SHOW GRANTS FOR 'aiscript'@'%'`
-- 检查 MySQL `max_connections`：`SHOW VARIABLES LIKE 'max_connections'`
+**Q3: 上传文件 413 Request Entity Too Large**
+- nginx 默认 1MB;deploy/k8s/ingress.yaml 已设 `proxy-body-size: 100m`
+- 自建 nginx:`client_max_body_size 100m;`
+- 应用层有 `bodySizeLimitMiddleware` 默认 1MB(非上传路由),上传路由是放行的
 
-### 10.5 JWT 认证失败
+### 9.6 升级与回滚
 
-```
-invalid token
-```
+**Q1: 升级前要不要备份?**
+**必须**。`mysqldump` + `configs/` + `.env` 都备份。详见 §8.3。
 
-**解决**：
-- 确认 `jwt.secret` 在 server 与 worker 中一致
-- 检查 token 是否过期
-- 确认系统时间同步：`ntpdate -u pool.ntp.org`
+**Q2: Schema 变更如何处理?**
+当前阶段靠 GORM AutoMigrate 自动增列。**减列 / 改类型**必须手写 SQL 或用 golang-migrate(§8.5),否则 AutoMigrate 不会执行。
 
-### 10.6 文件上传/下载失败
+**Q3: K8s 怎么灰度?**
+- 简单做法:把 backend deployment 复制一份(`backend-canary`),Service 加 `canary` 标签筛选,Ingress 加 `canary` 注解按百分比路由
+- 进阶:Istio / Argo Rollouts
 
-**排查**：
-- 检查存储 provider 配置
-- 本地存储：确认目录权限 `chmod 755 /opt/ai-script/var/uploads`
-- 云存储：确认 AccessKey / SecretKey 有效
-- 检查 `public_host` 是否可公网访问
+**Q4: 回滚到旧版?**
+- Docker:`docker compose pull <旧 tag> && docker compose up -d`
+- 二进制:用部署前备份的 `.bak`(见 §3.7 / §4.6)
+- K8s:`kubectl rollout undo`
 
-### 10.7 FFmpeg 处理失败
+### 9.7 其他
 
-**排查**：
-```bash
-# 检查 FFmpeg 是否安装
-ffmpeg -version
+**Q1: 默认密码 `admin/admin@123` 还是 `admin/admin123`?**
+**`admin/admin123`**(seed.go 写死)。README 中 `admin@123` 是历史误写,已在本指南 §1.2 修正。
 
-# 检查输入文件
-ffprobe -v error /path/to/input.mp4
+**Q2: 加密密钥 `CRYPTO_KEY` vs `CRYPTO_KEY_BASE64` 选哪个?**
+功能等价,二选一。新部署推荐 `CRYPTO_KEY_BASE64`(`openssl rand -base64 32` 一行生成,K8s Secret 友好)。
 
-# 检查磁盘空间
-df -h
-```
+**Q3: 怎么生成 `CRYPTO_KEY`?**
+代码里有 `cmd/genkey`(若已实现)。或:
+- `CRYPTO_KEY`:`openssl rand -base64 32 | head -c 32`
+- `CRYPTO_KEY_BASE64`:`openssl rand -base64 32`
 
----
-
-## 11. 安全加固建议
-
-### 11.1 JWT Secret
-
-- **必须**在生产环境更换默认密钥
-- 建议长度 >= 64 字符，使用 `openssl rand -base64 48` 生成
-- 定期轮换（建议每 90 天）
-
-```bash
-openssl rand -base64 48
-```
-
-### 11.2 Crypto Key
-
-- 使用 `go run ./cmd/genkey` 生成
-- **绝对不要**提交到代码仓库
-- 通过环境变量或 K8s Secret 注入
-
-### 11.3 RBAC 配置
-
-RBAC 模型文件：`configs/rbac_model.conf`
-
-```
-[request_definition]
-r = sub, obj, act
-
-[policy_definition]
-p = sub, obj, act
-
-[role_definition]
-g = _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
-```
-
-- 生产环境应在数据库中预置角色-权限策略
-- 定期审计权限分配
-- 敏感操作（删除、重置密码）增加二次确认
-
-### 11.4 数据库安全
-
-- 禁止 root 远程登录
-- 使用独立业务用户，最小权限原则
-- 启用 SSL/TLS 连接
-- 定期更新密码
-
-### 11.5 网络安全
-
-- 使用 HTTPS（Nginx / Traefik / Ingress 反向代理）
-- 配置 CORS 白名单（生产环境关闭 `AllowAllOrigins`）
-- 限制 Redis 访问（绑定 127.0.0.1 或内网 IP）
-- 对象存储 bucket 不要设置为 public-read，使用预签名 URL
-
-### 11.6 容器安全
-
-- 使用非 root 用户运行容器
-- 定期更新基础镜像（`alpine:3.20`）
-- 扫描镜像漏洞：`trivy image ai-script:latest`
-
----
-
-## 12. 升级指南
-
-### 12.1 升级前准备
-
-1. **阅读 CHANGELOG**：确认是否有破坏性变更
-2. **备份数据**：
-   ```bash
-   mysqldump -u aiscript -p ai_script > /backup/pre-upgrade-$(date +%Y%m%d).sql
-   ```
-3. **备份配置**：
-   ```bash
-   cp -r configs /backup/configs-$(date +%Y%m%d)
-   ```
-
-### 12.2 二进制升级
-
-```bash
-# 1. 拉取新代码
-git pull origin main
-
-# 2. 重新编译
-make build
-
-# 3. 停止旧服务
-sudo systemctl stop ai-script-server ai-script-worker
-
-# 4. 替换二进制
-cp out/server /opt/ai-script/server
-cp out/worker /opt/ai-script/worker
-
-# 5. 如有配置变更，合并 configs/config.yaml
-
-# 6. 启动新服务
-sudo systemctl start ai-script-server ai-script-worker
-
-# 7. 验证
-sudo systemctl status ai-script-server
-curl http://localhost:8080/healthz
-```
-
-### 12.3 Docker 升级
-
-```bash
-# 1. 拉取新代码并构建
-git pull origin main
-docker build -t ai-script:v2.0.0 .
-
-# 2. 停止并移除旧容器
-docker compose down
-
-# 3. 更新镜像标签
-docker tag ai-script:v2.0.0 ai-script:latest
-
-# 4. 启动新容器
-docker compose up -d
-
-# 5. 验证
-docker compose ps
-docker compose logs -f server
-```
-
-### 12.4 K8s 升级
-
-```bash
-# 1. 构建并推送新镜像
-docker build -t your-registry/ai-script:v2.0.0 .
-docker push your-registry/ai-script:v2.0.0
-
-# 2. 滚动更新
-kubectl set image deployment/ai-script-server server=your-registry/ai-script:v2.0.0 -n ai-script
-kubectl set image deployment/ai-script-worker worker=your-registry/ai-script:v2.0.0 -n ai-script
-
-# 3. 监控滚动状态
-kubectl rollout status deployment/ai-script-server -n ai-script
-kubectl rollout status deployment/ai-script-worker -n ai-script
-
-# 4. 回滚（如有问题）
-kubectl rollout undo deployment/ai-script-server -n ai-script
-kubectl rollout undo deployment/ai-script-worker -n ai-script
-```
-
-### 12.5 数据库 Schema 升级
-
-如版本包含 schema 变更：
-
-```bash
-# 使用 golang-migrate
-migrate -path migrations -database "mysql://aiscript:password@tcp(localhost:3306)/ai_script" up
-
-# 或手动执行 SQL（生产环境需 DBA 审核）
-mysql -u aiscript -p ai_script < migrations/0002_add_new_column.sql
-```
-
-### 12.6 升级后验证清单
-
-- [ ] `/healthz` 返回 `{"status":"ok"}`
-- [ ] 登录/获取 Token 正常
-- [ ] 文件上传/下载正常
-- [ ] 任务提交与执行正常（检查 worker 日志）
-- [ ] WebSocket 进度推送正常
-- [ ] 数据库连接无报错
-- [ ] 日志无 ERROR 级别输出
+**Q4: ARM 服务器能跑吗?**
+- 容器:CI 已构建 `linux/amd64 + linux/arm64` 多架构镜像,直接拉 latest 即可
+- 裸机 ARM:`GOARCH=arm64 go build` 重新编译
 
 ---
 
@@ -1529,46 +1228,161 @@ mysql -u aiscript -p ai_script < migrations/0002_add_new_column.sql
 
 ### A. Makefile 命令速查
 
-| 命令 | 说明 |
-|------|------|
-| `make help` | 查看帮助 |
-| `make tidy` | 整理 Go 模块依赖 |
-| `make run` | 本地启动 server |
-| `make worker` | 本地启动 worker |
-| `make build` | 构建二进制到 `out/` |
-| `make test` | 运行单元测试 |
-| `make lint` | 静态代码检查 |
-| `make docker` | 构建 Docker 镜像 |
+#### 根 Makefile
 
-### B. 常用环境变量速查
+| 命令 | 说明 | 备注 |
+|------|------|------|
+| `make build` | 构建 backend(server + worker)→ `backend/bin/` | 默认目标 |
+| `make build-frontend` | 前端 `npm ci && npm run build` | |
+| `make build-all` | 后端 + 前端 | |
+| `make run` / `make server` | 本地启动 backend server | |
+| `make worker` | 本地启动 backend worker | |
+| `make migrate` | 跑 `cmd/server -migrate` | |
+| `make test` | 后端 `go test ./... -race -count=1` | |
+| `make test-frontend` | 前端 npm test | |
+| `make lint` | 后端 golangci-lint | |
+| `make lint-frontend` | 前端 ESLint | |
+| `make fmt` | gofmt -w | |
+| `make swagger` | 生成 OpenAPI 文档 | |
+| `make docker` | `docker compose build` | ⚠️ 与 `backend/make docker` 行为不同 |
+| `make up` | `docker compose up -d` | |
+| `make down` | `docker compose down` | |
+| `make clean` | 清 `backend/bin/` | |
+
+#### `backend/Makefile`
+
+| 命令 | 说明 | 备注 |
+|------|------|------|
+| `make help` | 自描述帮助 | |
+| `make tidy` | `go mod tidy` | |
+| `make run` | 本地启动 server | |
+| `make worker` | 本地启动 worker | |
+| `make build` | 构建 → `backend/out/` | ⚠️ 路径与根 Makefile 不同 |
+| `make test` | `go test ./...` | |
+| `make lint` | golangci-lint | |
+| `make docker` | `docker build -t ai-script:latest .` | ⚠️ 与根 `make docker` 行为不同 |
+| `make swagger` | 生成 swagger | |
+
+### B. 环境变量速查表
 
 ```bash
-export APP_ENV=prod
-export APP_PORT=8080
-export APP_LOG_LEVEL=info
-export JWT_SECRET="your-jwt-secret"
-export JWT_EXPIRES_IN=7200
-export JWT_REFRESH_EXPIRES_IN=604800
-export MYSQL_DSN="user:pass@tcp(host:3306)/db?charset=utf8mb4&parseTime=True&loc=UTC"
-export MYSQL_MAX_IDLE=10
-export MYSQL_MAX_OPEN=100
-export REDIS_ADDR="127.0.0.1:6379"
-export REDIS_PASSWORD=""
-export REDIS_DB=0
-export OSS_PROVIDER=local
-export OSS_BUCKET=./var/uploads
-export OSS_PUBLIC_HOST=/uploads
-export CRYPTO_KEY="your-crypto-key"
-export MODEL_GATEWAY_URL=""
-export MODEL_GATEWAY_KEY=""
+# ---- App ----
+APP_ENV=prod                    # local / dev / staging / prod
+APP_PORT=8080
+APP_LOG_LEVEL=info              # debug / info / warn / error
+GIN_MODE=release
+CONFIG_FILE=/app/configs/config.yaml
+
+# ---- MySQL ----
+MYSQL_DSN=aiscript:password@tcp(host:3306)/ai_script?charset=utf8mb4&parseTime=True&loc=Local
+MYSQL_MAX_IDLE=10
+MYSQL_MAX_OPEN=100
+MYSQL_CONN_MAX_LIFETIME=3600
+MYSQL_CONN_MAX_IDLE_TIME=1800
+
+# ---- Redis ----
+REDIS_ADDR=127.0.0.1:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+REDIS_POOL_SIZE=20
+REDIS_MIN_IDLE_CONNS=5
+REDIS_POOL_TIMEOUT=5
+
+# ---- JWT ----
+JWT_SECRET=                     # >= 32 字符随机
+JWT_EXPIRES_IN=7200             # access token 秒数
+JWT_REFRESH_EXPIRES_IN=604800   # refresh token 秒数
+
+# ---- Crypto(二选一)----
+CRYPTO_KEY=                     # 32 字节明文
+CRYPTO_KEY_BASE64=              # base64 编码的 32 字节
+
+# ---- 对象存储 ----
+OSS_PROVIDER=local              # local / minio / oss / s3 / cos
+OSS_ENDPOINT=
+OSS_REGION=
+OSS_BUCKET=./var/uploads
+OSS_ACCESS_KEY=
+OSS_SECRET_KEY=
+OSS_PUBLIC_HOST=/uploads
+
+# ---- 模型网关 ----
+MODEL_GATEWAY_URL=
+MODEL_GATEWAY_KEY=
+
+# ---- 迁移(可选,生产 golang-migrate)----
+MIGRATE_MODE=auto               # auto / manual
+MIGRATE_DSN=
+MIGRATE_SOURCE=file:///app/migrations
+
+# ---- 业务超时(秒)----
+TIMEOUT_IMAGE_GEN=120
+TIMEOUT_VIDEO_GEN=120
+TIMEOUT_VIDEO_COMPOSE=300
+TIMEOUT_MODEL_HEALTH=30
+TIMEOUT_PIPELINE_RUN=600
 ```
 
-### C. 相关文档
+### C. 端口占用速查
 
-- `docs/technical-design.md` §6-7：数据库设计与技术架构
-- `configs/rbac_model.conf`：RBAC 权限模型定义
-- `.env.example`：环境变量示例
+| 端口 | 服务 | Compose 是否暴露 | K8s 是否暴露 |
+|------|------|----------------|-------------|
+| 80 | frontend nginx | ✅ | Ingress |
+| 8080 | backend server | ✅ | Service ClusterIP + Ingress |
+| 3306 | MySQL | 127.0.0.1:3306 only | 仅 cluster 内 |
+| 6379 | Redis | 127.0.0.1:6379 only | 仅 cluster 内 |
+| 9000 | MinIO API | 127.0.0.1:9000 only | 不部署 |
+| 9001 | MinIO Console | 127.0.0.1:9001 only | 不部署 |
+
+### D. 部署文件清单(对照 repo)
+
+```
+ai-script/
+├── README.md                      # 项目入口(快速开始)
+├── Makefile                       # 项目级 Makefile(整合 backend + frontend + compose)
+├── docker-compose.yml             # ⭐ 开发用 compose
+├── .env.example                   # ⭐ 开发用 env 模板
+├── backend/
+│   ├── Dockerfile                 # backend 镜像(server + worker)
+│   ├── Makefile                   # 后端独立 Makefile
+│   ├── .env.example               # backend 独立运行用 env 模板(systemd/NSSM)
+│   ├── configs/
+│   │   └── config.yaml            # 主配置(被环境变量覆盖)
+│   └── cmd/
+│       ├── server/                # HTTP API 入口
+│       └── worker/                # Asynq worker 入口
+├── frontend/
+│   ├── Dockerfile                 # 前端镜像(nginx + dist)
+│   ├── nginx.conf                 # nginx 配置
+│   └── .env.example               # VITE_API_BASE 等前端 env
+├── deploy/
+│   ├── docker-compose.yml         # ⭐ 生产用 compose
+│   ├── .env.example               # ⭐ 生产用 env 模板
+│   └── k8s/                       # ⭐ K8s manifests
+│       ├── namespace.yaml
+│       ├── configmap.yaml
+│       ├── secret.yaml            # ⚠️ 模板,部署前替换占位符
+│       ├── backend-deployment.yaml
+│       ├── worker-deployment.yaml
+│       ├── frontend-deployment.yaml
+│       └── ingress.yaml
+├── scripts/
+│   ├── smoke.sh                   # ⭐ 部署后冒烟测试
+│   └── sql/
+│       ├── 001_init.sql           # DDL 备份(主要靠 GORM AutoMigrate)
+│       └── 002_seed.sql           # 部门/权限点种子数据
+└── .github/
+    └── workflows/
+        └── ci.yml                 # ⭐ CI/CD 流水线
+```
+
+### E. 文档协作约定
+
+- 本文档由 **DevOps 团队** 维护
+- 修改建议先开 issue 讨论,涉及部署方式新增/删除需评审
+- 与代码不一致时,**以代码为准**,文档应同步更新
+- 与 README 不一致时,**以本文档为准**
 
 ---
 
-> 本文档由 DevOps 团队维护，如有问题请联系运维人员。
+> 有问题?先查 [§9 FAQ](#9-faq--常见问题速答),再查对应部署方式章节的"常见问题",找不到答案再联系运维。

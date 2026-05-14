@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // persistRemoteAsset 把 adapter 返回的外链(litellm/上游 CDN, 通常有效期短)
@@ -35,7 +38,7 @@ func persistRemoteAsset(ctx context.Context, store storage.Storage, namespace, s
 	if strings.HasPrefix(srcURL, "/uploads/") {
 		return srcURL
 	}
-	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, PersistTimeoutSec*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, srcURL, nil)
 	if err != nil {
@@ -80,7 +83,12 @@ func persistRemoteAsset(ctx context.Context, store storage.Storage, namespace, s
 		}
 	}
 	rnd := make([]byte, 8)
-	_, _ = rand.Read(rnd)
+	if _, err := rand.Read(rnd); err != nil {
+		if log != nil {
+			log.Warn("persistRemoteAsset: rand read failed", zap.Error(err))
+		}
+		return srcURL
+	}
 	now := time.Now()
 	key := fmt.Sprintf("%s/%04d/%02d/%02d/%s%s",
 		namespace, now.Year(), now.Month(), now.Day(), hex.EncodeToString(rnd), ext)
@@ -96,24 +104,24 @@ func persistRemoteAsset(ctx context.Context, store storage.Storage, namespace, s
 
 // ============== Script ==============
 
-type ScriptService struct {
+type scriptService struct {
 	r   *repo.Repositories
-	tc  *queue.Client
+	tc  queue.TaskClient
 	hub *ws.Hub
 	log *zap.Logger
 }
 
 type CreateScriptInput struct {
-	ProjectID int64  `json:"project_id" binding:"required"`
-	Name      string `json:"name" binding:"required"`
-	RawText   string `json:"raw_text" binding:"required"`
-	SourceURL string `json:"source_url"`
+	ProjectID int64  `json:"project_id" binding:"required,gte=1"`
+	Name      string `json:"name" binding:"required,min=1,max=200"`
+	RawText   string `json:"raw_text" binding:"required,min=1,max=50000"`
+	SourceURL string `json:"source_url" binding:"omitempty,max=500"`
 }
 
 type SplitScriptInput struct {
-	ModelID     int64          `json:"model_id" binding:"required"`
-	EpisodeCnt  int            `json:"episode_count"`
-	TargetChars int            `json:"target_chars"`
+	ModelID     int64          `json:"model_id" binding:"required,gte=1"`
+	EpisodeCnt  int            `json:"episode_count" binding:"omitempty,gte=1,lte=100"`
+	TargetChars int            `json:"target_chars" binding:"omitempty,gte=100,lte=5000"`
 	Params      map[string]any `json:"params"`
 }
 
@@ -126,11 +134,11 @@ type splitPayload struct {
 	UserID      int64          `json:"user_id"`
 }
 
-func (s *ScriptService) List(ctx context.Context, q *repo.ListScriptsQuery) ([]model.Script, int64, error) {
+func (s *scriptService) List(ctx context.Context, q *repo.ListScriptsQuery) ([]model.Script, int64, error) {
 	return s.r.Script.List(ctx, q)
 }
 
-func (s *ScriptService) Get(ctx context.Context, id int64) (*model.Script, error) {
+func (s *scriptService) Get(ctx context.Context, id int64) (*model.Script, error) {
 	sc, err := s.r.Script.Get(ctx, id)
 	if err != nil {
 		return nil, errcode.ErrNotFound
@@ -138,14 +146,14 @@ func (s *ScriptService) Get(ctx context.Context, id int64) (*model.Script, error
 	return sc, nil
 }
 
-func (s *ScriptService) Create(ctx context.Context, in *CreateScriptInput, uid int64) (*model.Script, error) {
+func (s *scriptService) Create(ctx context.Context, in *CreateScriptInput, uid int64) (*model.Script, error) {
 	sc := &model.Script{
 		ProjectID:      in.ProjectID,
 		Name:           in.Name,
 		SourceURL:      in.SourceURL,
 		RawText:        in.RawText,
 		CurrentVersion: 1,
-		Status:         1, // uploaded
+		Status:         ScriptStatusUploaded,
 	}
 	sc.CreatedBy = uid
 	sc.UpdatedBy = uid
@@ -153,33 +161,35 @@ func (s *ScriptService) Create(ctx context.Context, in *CreateScriptInput, uid i
 		return nil, err
 	}
 	// 同步写入 v1 版本
-	_ = s.r.Script.AddVersion(ctx, &model.ScriptVersion{
+	if err := s.r.Script.AddVersion(ctx, &model.ScriptVersion{
 		ScriptID:  sc.ID,
 		VersionNo: 1,
 		Content:   in.RawText,
 		CommitMsg: "initial",
 		CreatedBy: uid,
-	})
+	}); err != nil {
+		s.log.Warn("script add version failed", zap.Int64("script_id", sc.ID), zap.Error(err))
+	}
 	return sc, nil
 }
 
-func (s *ScriptService) Delete(ctx context.Context, id int64) error {
+func (s *scriptService) Delete(ctx context.Context, id int64) error {
 	if err := s.r.Episode.DeleteByScript(ctx, id); err != nil {
 		return err
 	}
 	return s.r.Script.Delete(ctx, id)
 }
 
-func (s *ScriptService) ListEpisodes(ctx context.Context, scriptID int64) ([]model.Episode, error) {
+func (s *scriptService) ListEpisodes(ctx context.Context, scriptID int64) ([]model.Episode, error) {
 	return s.r.Episode.ListByScript(ctx, scriptID)
 }
 
 // Split 异步分集 - 入队后立即返回任务 ID,worker 端调用 LLM 并写入 episodes
-func (s *ScriptService) Split(ctx context.Context, scriptID int64, in *SplitScriptInput, uid int64) (string, error) {
+func (s *scriptService) Split(ctx context.Context, scriptID int64, in *SplitScriptInput, uid int64) (string, error) {
 	if _, err := s.r.Script.Get(ctx, scriptID); err != nil {
 		return "", errcode.ErrNotFound
 	}
-	payload, _ := json.Marshal(splitPayload{
+	payload, err := json.Marshal(splitPayload{
 		ScriptID:    scriptID,
 		ModelID:     in.ModelID,
 		EpisodeCnt:  in.EpisodeCnt,
@@ -187,11 +197,14 @@ func (s *ScriptService) Split(ctx context.Context, scriptID int64, in *SplitScri
 		Params:      in.Params,
 		UserID:      uid,
 	})
-	return s.tc.Enqueue(ctx, TaskScriptSplit, payload, asynq.Queue("default"), asynq.MaxRetry(3))
+	if err != nil {
+		return "", fmt.Errorf("marshal split payload: %w", err)
+	}
+	return s.tc.Enqueue(ctx, TaskScriptSplit, payload, asynq.Queue(DefaultQueueDefault), asynq.MaxRetry(DefaultMaxRetry))
 }
 
 // HandleSplitTask 是 worker 端的 script.split 处理器
-func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFunc {
+func (s *scriptService) HandleSplitTask(modelSvc ModelService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p splitPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -200,7 +213,7 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 		topic := fmt.Sprintf("script:%d", p.ScriptID)
 		// markFailed 在任意失败分支前把 script.status 置 4(failed),让前端能判定
 		markFailed := func(reason string) {
-			if err := s.r.Script.UpdateStatus(ctx, p.ScriptID, 4); err != nil {
+			if err := s.r.Script.UpdateStatus(ctx, p.ScriptID, ScriptStatusFailed); err != nil {
 				s.log.Warn("mark script failed", zap.Int64("script_id", p.ScriptID), zap.Error(err))
 			}
 			s.publish(topic, "error", 0, reason)
@@ -214,7 +227,8 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 		}
 		ad, m, err := modelSvc.GetAdapter(ctx, p.ModelID)
 		if err != nil {
-			markFailed("model adapter unavailable: " + err.Error())
+			s.log.Error("model adapter unavailable", zap.Int64("script_id", p.ScriptID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			markFailed("模型不可用")
 			return err
 		}
 		if ad.Type() != adapter.TypeText {
@@ -226,7 +240,7 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 
 		count := p.EpisodeCnt
 		if count <= 0 {
-			count = 12
+			count = DefaultEpisodeCount
 		}
 		prompt := buildSplitPrompt(sc.RawText, count, p.TargetChars)
 		req := &adapter.Request{
@@ -241,7 +255,8 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 		}
 		resp, err := ad.Generate(ctx, req)
 		if err != nil {
-			markFailed("LLM call failed: " + err.Error())
+			s.log.Error("LLM call failed", zap.Int64("script_id", p.ScriptID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			markFailed("模型调用失败")
 			return err
 		}
 		if len(resp.Texts) == 0 {
@@ -251,7 +266,8 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 		s.publish(topic, "progress", 0.7, "parsing episodes")
 		eps, err := parseEpisodes(resp.Texts[0])
 		if err != nil {
-			markFailed("parse failed: " + err.Error())
+			s.log.Error("parse episodes failed", zap.Int64("script_id", p.ScriptID), zap.Error(err))
+			markFailed("解析结果失败")
 			return err
 		}
 		if len(eps) == 0 {
@@ -265,12 +281,16 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 			}
 		}
 		// 覆盖式写入
-		_ = s.r.Episode.DeleteByScript(ctx, p.ScriptID)
-		if err := s.r.Episode.BulkCreate(ctx, eps); err != nil {
-			markFailed("save failed: " + err.Error())
+		if err := s.r.Episode.DeleteByScript(ctx, p.ScriptID); err != nil {
+			markFailed("delete old episodes failed: " + err.Error())
 			return err
 		}
-		if err := s.r.Script.UpdateStatus(ctx, p.ScriptID, 3); err != nil {
+		if err := s.r.Episode.BulkCreate(ctx, eps); err != nil {
+			s.log.Error("save episodes failed", zap.Int64("script_id", p.ScriptID), zap.Error(err))
+			markFailed("保存失败")
+			return err
+		}
+		if err := s.r.Script.UpdateStatus(ctx, p.ScriptID, ScriptStatusSplitOK); err != nil {
 			s.log.Warn("update script status", zap.Error(err))
 		}
 		s.publish(topic, "done", 1.0, fmt.Sprintf("split into %d episodes", len(eps)))
@@ -279,7 +299,7 @@ func (s *ScriptService) HandleSplitTask(modelSvc *ModelService) asynq.HandlerFun
 }
 
 // publish 仅在 hub 可用时投递事件
-func (s *ScriptService) publish(topic, evType string, pct float64, msg string) {
+func (s *scriptService) publish(topic, evType string, pct float64, msg string) {
 	if s.hub == nil {
 		return
 	}
@@ -339,15 +359,15 @@ func stripJSONFence(s string) string {
 
 // ============== Prompt ==============
 
-type PromptService struct {
+type promptService struct {
 	r   *repo.Repositories
-	tc  *queue.Client
+	tc  queue.TaskClient
 	hub *ws.Hub
 	log *zap.Logger
 }
 
 type GeneratePromptInput struct {
-	ModelID int64          `json:"model_id" binding:"required"`
+	ModelID int64          `json:"model_id" binding:"required,gte=1"`
 	Params  map[string]any `json:"params"`
 }
 
@@ -358,32 +378,35 @@ type promptPayload struct {
 	UserID    int64          `json:"user_id"`
 }
 
-func (s *PromptService) Generate(ctx context.Context, episodeID int64, in *GeneratePromptInput, uid int64) (string, error) {
+func (s *promptService) Generate(ctx context.Context, episodeID int64, in *GeneratePromptInput, uid int64) (string, error) {
 	if _, err := s.r.Episode.Get(ctx, episodeID); err != nil {
 		return "", errcode.ErrNotFound
 	}
-	payload, _ := json.Marshal(promptPayload{
+	payload, err := json.Marshal(promptPayload{
 		EpisodeID: episodeID,
 		ModelID:   in.ModelID,
 		Params:    in.Params,
 		UserID:    uid,
 	})
-	return s.tc.Enqueue(ctx, TaskPromptGenerate, payload, asynq.Queue("default"), asynq.MaxRetry(3))
+	if err != nil {
+		return "", fmt.Errorf("marshal prompt payload: %w", err)
+	}
+	return s.tc.Enqueue(ctx, TaskPromptGenerate, payload, asynq.Queue(DefaultQueueDefault), asynq.MaxRetry(DefaultMaxRetry))
 }
 
-func (s *PromptService) ListByEpisode(ctx context.Context, episodeID int64) ([]model.EpisodePrompt, error) {
+func (s *promptService) ListByEpisode(ctx context.Context, episodeID int64) ([]model.EpisodePrompt, error) {
 	return s.r.Prompt.ListByEpisode(ctx, episodeID)
 }
 
-func (s *PromptService) GetCurrent(ctx context.Context, episodeID int64) (*model.EpisodePrompt, error) {
+func (s *promptService) GetCurrent(ctx context.Context, episodeID int64) (*model.EpisodePrompt, error) {
 	return s.r.Prompt.GetCurrent(ctx, episodeID)
 }
 
-func (s *PromptService) SetCurrent(ctx context.Context, episodeID, id int64) error {
+func (s *promptService) SetCurrent(ctx context.Context, episodeID, id int64) error {
 	return s.r.Prompt.SetCurrent(ctx, episodeID, id)
 }
 
-func (s *PromptService) HandleGenerateTask(modelSvc *ModelService) asynq.HandlerFunc {
+func (s *promptService) HandleGenerateTask(modelSvc ModelService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p promptPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -399,7 +422,8 @@ func (s *PromptService) HandleGenerateTask(modelSvc *ModelService) asynq.Handler
 		}
 		ad, m, err := modelSvc.GetAdapter(ctx, p.ModelID)
 		if err != nil {
-			s.publish(topic, "error", 0, "model adapter unavailable: "+err.Error())
+			s.log.Error("model adapter unavailable", zap.Int64("episode_id", p.EpisodeID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			s.publish(topic, "error", 0, "模型不可用")
 			return err
 		}
 		if ad.Type() != adapter.TypeText {
@@ -421,7 +445,8 @@ func (s *PromptService) HandleGenerateTask(modelSvc *ModelService) asynq.Handler
 		}
 		resp, err := ad.Generate(ctx, req)
 		if err != nil {
-			s.publish(topic, "error", 0, "LLM call failed: "+err.Error())
+			s.log.Error("LLM call failed", zap.Int64("episode_id", p.EpisodeID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			s.publish(topic, "error", 0, "模型调用失败")
 			return err
 		}
 		if len(resp.Texts) == 0 {
@@ -430,7 +455,8 @@ func (s *PromptService) HandleGenerateTask(modelSvc *ModelService) asynq.Handler
 		}
 		content, err := parsePromptJSON(resp.Texts[0])
 		if err != nil {
-			s.publish(topic, "error", 0, "parse failed: "+err.Error())
+			s.log.Error("parse prompt failed", zap.Int64("episode_id", p.EpisodeID), zap.Error(err))
+			s.publish(topic, "error", 0, "解析结果失败")
 			return err
 		}
 		s.publish(topic, "progress", 0.85, "saving prompt")
@@ -443,7 +469,8 @@ func (s *PromptService) HandleGenerateTask(modelSvc *ModelService) asynq.Handler
 			GeneratedBy:      p.UserID,
 		}
 		if err := s.r.Prompt.CreateAsCurrent(ctx, ep0); err != nil {
-			s.publish(topic, "error", 0, "save failed: "+err.Error())
+			s.log.Error("save prompt failed", zap.Int64("episode_id", p.EpisodeID), zap.Error(err))
+			s.publish(topic, "error", 0, "保存失败")
 			return err
 		}
 		s.publish(topic, "done", 1.0, "prompt generated")
@@ -451,7 +478,7 @@ func (s *PromptService) HandleGenerateTask(modelSvc *ModelService) asynq.Handler
 	}
 }
 
-func (s *PromptService) publish(topic, evType string, pct float64, msg string) {
+func (s *promptService) publish(topic, evType string, pct float64, msg string) {
 	if s.hub == nil {
 		return
 	}
@@ -485,9 +512,9 @@ func parsePromptJSON(out string) ([]byte, error) {
 
 // ============== Storyboard / Image / ShortVideo / Full / Pipeline 占位 ==============
 
-type StoryboardService struct {
+type storyboardService struct {
 	r   *repo.Repositories
-	tc  *queue.Client
+	tc  queue.TaskClient
 	hub *ws.Hub
 	log *zap.Logger
 }
@@ -499,50 +526,58 @@ type storyboardPayload struct {
 	UserID    int64          `json:"user_id"`
 }
 
-func (s *StoryboardService) ListByEpisode(ctx context.Context, episodeID int64) ([]model.Storyboard, error) {
+func (s *storyboardService) ListByEpisode(ctx context.Context, episodeID int64) ([]model.Storyboard, error) {
 	return s.r.Story.ListByEpisode(ctx, episodeID)
 }
 
-func (s *StoryboardService) Get(ctx context.Context, id int64) (*model.Storyboard, error) {
+func (s *storyboardService) Get(ctx context.Context, id int64) (*model.Storyboard, error) {
 	return s.r.Story.Get(ctx, id)
 }
 
-func (s *StoryboardService) Update(ctx context.Context, sb *model.Storyboard) error {
+func (s *storyboardService) Update(ctx context.Context, sb *model.Storyboard) error {
 	return s.r.Story.Update(ctx, sb)
 }
 
-func (s *StoryboardService) Delete(ctx context.Context, id int64) error {
+func (s *storyboardService) Delete(ctx context.Context, id int64) error {
 	return s.r.Story.Delete(ctx, id)
 }
 
-// BulkSave 覆盖式批量保存某集分镜
-func (s *StoryboardService) BulkSave(ctx context.Context, episodeID int64, list []model.Storyboard) error {
+// BulkSave 覆盖式批量保存某集分镜（service 层加事务保险，避免 Delete 后 BulkCreate 中断导致数据丢失）
+func (s *storyboardService) BulkSave(ctx context.Context, episodeID int64, list []model.Storyboard) error {
 	for i := range list {
 		list[i].EpisodeID = episodeID
 	}
-	if err := s.r.Story.DeleteByEpisode(ctx, episodeID); err != nil {
-		return err
-	}
-	return s.r.Story.BulkCreate(ctx, list)
+	return s.r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("episode_id = ?", episodeID).Delete(&model.Storyboard{}).Error; err != nil {
+			return err
+		}
+		if len(list) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(list, 100).Error
+	})
 }
 
-func (s *StoryboardService) ApplyStyle(ctx context.Context, storyboardID, styleID, userID int64) error {
+func (s *storyboardService) ApplyStyle(ctx context.Context, storyboardID, styleID, userID int64) error {
 	return s.r.Story.ApplyStyle(ctx, storyboardID, styleID, userID)
 }
 
 // Generate 异步基于已存在的 prompt 生成分镜
-func (s *StoryboardService) Generate(ctx context.Context, episodeID, modelID int64, params map[string]any, uid int64) (string, error) {
-	payload, _ := json.Marshal(storyboardPayload{
+func (s *storyboardService) Generate(ctx context.Context, episodeID, modelID int64, params map[string]any, uid int64) (string, error) {
+	payload, err := json.Marshal(storyboardPayload{
 		EpisodeID: episodeID,
 		ModelID:   modelID,
 		Params:    params,
 		UserID:    uid,
 	})
-	return s.tc.Enqueue(ctx, TaskStoryboardGenerate, payload, asynq.Queue("default"), asynq.MaxRetry(3))
+	if err != nil {
+		return "", fmt.Errorf("marshal storyboard payload: %w", err)
+	}
+	return s.tc.Enqueue(ctx, TaskStoryboardGenerate, payload, asynq.Queue(DefaultQueueDefault), asynq.MaxRetry(DefaultMaxRetry))
 }
 
 // HandleGenerateTask 把 episode 当前 prompt JSON 的 shots[] 转换为 storyboard 行
-func (s *StoryboardService) HandleGenerateTask(modelSvc *ModelService) asynq.HandlerFunc {
+func (s *storyboardService) HandleGenerateTask(modelSvc ModelService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p storyboardPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -565,7 +600,10 @@ func (s *StoryboardService) HandleGenerateTask(modelSvc *ModelService) asynq.Han
 
 		list := make([]model.Storyboard, 0, len(shots))
 		for _, sh := range shots {
-			chs, _ := json.Marshal(sh.Characters)
+			chs, err := json.Marshal(sh.Characters)
+			if err != nil {
+				chs = []byte("[]")
+			}
 			list = append(list, model.Storyboard{
 				EpisodeID:    p.EpisodeID,
 				PromptID:     cur.ID,
@@ -576,12 +614,13 @@ func (s *StoryboardService) HandleGenerateTask(modelSvc *ModelService) asynq.Han
 				Characters:   model.JSON(chs),
 				Action:       sh.Action,
 				Dialogue:     sh.Dialogue,
-				DurationSec:  defaultInt(sh.DurationSec, 15),
+				DurationSec:  defaultInt(sh.DurationSec, DefaultShotDuration),
 				Status:       1,
 			})
 		}
 		if err := s.BulkSave(ctx, p.EpisodeID, list); err != nil {
-			s.publish(topic, "error", 0, "save failed: "+err.Error())
+			s.log.Error("save storyboard failed", zap.Int64("episode_id", p.EpisodeID), zap.Error(err))
+			s.publish(topic, "error", 0, "保存失败")
 			return err
 		}
 		s.publish(topic, "done", 1.0, fmt.Sprintf("storyboard ready (%d shots)", len(list)))
@@ -625,7 +664,7 @@ func defaultInt(v, def int) int {
 	return v
 }
 
-func (s *StoryboardService) publish(topic, evType string, pct float64, msg string) {
+func (s *storyboardService) publish(topic, evType string, pct float64, msg string) {
 	if s.hub == nil {
 		return
 	}
@@ -634,21 +673,21 @@ func (s *StoryboardService) publish(topic, evType string, pct float64, msg strin
 
 // ============== ImageService ==============
 
-type ImageService struct {
+type imageService struct {
 	r     *repo.Repositories
-	tc    *queue.Client
+	tc    queue.TaskClient
 	hub   *ws.Hub
 	store storage.Storage
 	log   *zap.Logger
 }
 
 type ImageGenInput struct {
-	StoryboardID int64          `json:"storyboard_id"`
-	ProjectID    int64          `json:"project_id"`
-	StyleID      int64          `json:"style_id"`
-	ModelID      int64          `json:"model_id" binding:"required"`
-	Prompt       string         `json:"prompt"`
-	NegPrompt    string         `json:"neg_prompt"`
+	StoryboardID int64          `json:"storyboard_id" binding:"required,gte=1"`
+	ProjectID    int64          `json:"project_id" binding:"required,gte=1"`
+	StyleID      int64          `json:"style_id" binding:"omitempty,gte=1"`
+	ModelID      int64          `json:"model_id" binding:"required,gte=1"`
+	Prompt       string         `json:"prompt" binding:"omitempty,min=1,max=2000"`
+	NegPrompt    string         `json:"neg_prompt" binding:"omitempty,max=1000"`
 	Params       map[string]any `json:"params"`
 }
 
@@ -664,18 +703,18 @@ type imagePayload struct {
 	DeptID       int64          `json:"dept_id"`
 }
 
-func (s *ImageService) List(ctx context.Context, q *repo.ListImagesQuery) ([]model.Image, int64, error) {
+func (s *imageService) List(ctx context.Context, q *repo.ListImagesQuery) ([]model.Image, int64, error) {
 	return s.r.Image.List(ctx, q)
 }
-func (s *ImageService) Get(ctx context.Context, id int64) (*model.Image, error) {
+func (s *imageService) Get(ctx context.Context, id int64) (*model.Image, error) {
 	return s.r.Image.Get(ctx, id)
 }
-func (s *ImageService) Delete(ctx context.Context, id int64) error {
+func (s *imageService) Delete(ctx context.Context, id int64) error {
 	return s.r.Image.Delete(ctx, id)
 }
 
-func (s *ImageService) Generate(ctx context.Context, in *ImageGenInput, uid, deptID int64) (string, error) {
-	payload, _ := json.Marshal(imagePayload{
+func (s *imageService) Generate(ctx context.Context, in *ImageGenInput, uid, deptID int64) (string, error) {
+	payload, err := json.Marshal(imagePayload{
 		StoryboardID: in.StoryboardID,
 		ProjectID:    in.ProjectID,
 		StyleID:      in.StyleID,
@@ -686,10 +725,13 @@ func (s *ImageService) Generate(ctx context.Context, in *ImageGenInput, uid, dep
 		UserID:       uid,
 		DeptID:       deptID,
 	})
-	return s.tc.Enqueue(ctx, TaskImageGenerate, payload, asynq.Queue("default"), asynq.MaxRetry(3))
+	if err != nil {
+		return "", fmt.Errorf("marshal image payload: %w", err)
+	}
+	return s.tc.Enqueue(ctx, TaskImageGenerate, payload, asynq.Queue(DefaultQueueDefault), asynq.MaxRetry(DefaultMaxRetry))
 }
 
-func (s *ImageService) HandleGenerateTask(modelSvc *ModelService, invSvc *InvocationService) asynq.HandlerFunc {
+func (s *imageService) HandleGenerateTask(modelSvc ModelService, invSvc InvocationService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p imagePayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -701,7 +743,8 @@ func (s *ImageService) HandleGenerateTask(modelSvc *ModelService, invSvc *Invoca
 
 		ad, m, err := modelSvc.GetAdapter(ctx, p.ModelID)
 		if err != nil {
-			s.publish(topic, "error", 0, "image model unavailable: "+err.Error())
+			s.log.Error("image model unavailable", zap.Int64("storyboard_id", p.StoryboardID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			s.publish(topic, "error", 0, "图像模型不可用")
 			endErr := time.Now()
 			invSvc.Log(ctx, &LogParams{
 				ModelID: p.ModelID, UserID: p.UserID, DeptID: p.DeptID, ProjectID: p.ProjectID,
@@ -737,9 +780,12 @@ func (s *ImageService) HandleGenerateTask(modelSvc *ModelService, invSvc *Invoca
 			NegPrompt: p.NegPrompt,
 			Params:    p.Params,
 		}
-		resp, err := ad.Generate(ctx, req)
+		genCtx, cancel := context.WithTimeout(ctx, getTimeout("TIMEOUT_IMAGE_GEN", 120))
+		defer cancel()
+		resp, err := ad.Generate(genCtx, req)
 		if err != nil {
-			s.publish(topic, "error", 0, "image model failed: "+err.Error())
+			s.log.Error("image model call failed", zap.Int64("storyboard_id", p.StoryboardID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			s.publish(topic, "error", 0, "图像生成失败")
 			endErr := time.Now()
 			invSvc.Log(ctx, &LogParams{
 				ModelID: p.ModelID, UserID: p.UserID, DeptID: p.DeptID, ProjectID: p.ProjectID,
@@ -766,7 +812,10 @@ func (s *ImageService) HandleGenerateTask(modelSvc *ModelService, invSvc *Invoca
 		// 把远程 URL 拉下来落到对象存储,得到稳定内部 URL
 		stableURL := persistRemoteAsset(ctx, s.store, "images", resp.ImageURLs[0], s.log)
 		s.publish(topic, "progress", 0.85, "saving image record")
-		paramJSON, _ := json.Marshal(p.Params)
+		paramJSON, err := json.Marshal(p.Params)
+		if err != nil {
+			paramJSON = []byte("{}")
+		}
 		img := &model.Image{
 			ProjectID:    p.ProjectID,
 			StoryboardID: p.StoryboardID,
@@ -783,7 +832,8 @@ func (s *ImageService) HandleGenerateTask(modelSvc *ModelService, invSvc *Invoca
 		}
 		img.CreatedBy = p.UserID
 		if err := s.r.Image.Create(ctx, img); err != nil {
-			s.publish(topic, "error", 0, "persist image failed: "+err.Error())
+			s.log.Error("persist image failed", zap.Int64("storyboard_id", p.StoryboardID), zap.Error(err))
+			s.publish(topic, "error", 0, "保存图片失败")
 			return err
 		}
 		end := time.Now()
@@ -805,7 +855,7 @@ func (s *ImageService) HandleGenerateTask(modelSvc *ModelService, invSvc *Invoca
 	}
 }
 
-func (s *ImageService) publish(topic, evType string, pct float64, msg string) {
+func (s *imageService) publish(topic, evType string, pct float64, msg string) {
 	if s.hub == nil {
 		return
 	}
@@ -855,20 +905,20 @@ func max1(n int) int {
 
 // ============== ShortVideoService ==============
 
-type ShortVideoService struct {
+type shortVideoService struct {
 	r     *repo.Repositories
-	tc    *queue.Client
+	tc    queue.TaskClient
 	hub   *ws.Hub
 	store storage.Storage
 	log   *zap.Logger
 }
 
 type ShortVideoGenInput struct {
-	StoryboardID   int64          `json:"storyboard_id"`
-	ProjectID      int64          `json:"project_id"`
+	StoryboardID   int64          `json:"storyboard_id" binding:"required,gte=1"`
+	ProjectID      int64          `json:"project_id" binding:"required,gte=1"`
 	SourceImageIDs []int64        `json:"source_image_ids"`
-	Prompt         string         `json:"prompt"`
-	ModelID        int64          `json:"model_id" binding:"required"`
+	Prompt         string         `json:"prompt" binding:"omitempty,min=1,max=2000"`
+	ModelID        int64          `json:"model_id" binding:"required,gte=1"`
 	Params         map[string]any `json:"params"`
 }
 
@@ -883,18 +933,18 @@ type shortVideoPayload struct {
 	DeptID         int64          `json:"dept_id"`
 }
 
-func (s *ShortVideoService) List(ctx context.Context, q *repo.ListShortVideosQuery) ([]model.ShortVideo, int64, error) {
+func (s *shortVideoService) List(ctx context.Context, q *repo.ListShortVideosQuery) ([]model.ShortVideo, int64, error) {
 	return s.r.Short.List(ctx, q)
 }
-func (s *ShortVideoService) Get(ctx context.Context, id int64) (*model.ShortVideo, error) {
+func (s *shortVideoService) Get(ctx context.Context, id int64) (*model.ShortVideo, error) {
 	return s.r.Short.Get(ctx, id)
 }
-func (s *ShortVideoService) Delete(ctx context.Context, id int64) error {
+func (s *shortVideoService) Delete(ctx context.Context, id int64) error {
 	return s.r.Short.Delete(ctx, id)
 }
 
-func (s *ShortVideoService) Generate(ctx context.Context, in *ShortVideoGenInput, uid, deptID int64) (string, error) {
-	payload, _ := json.Marshal(shortVideoPayload{
+func (s *shortVideoService) Generate(ctx context.Context, in *ShortVideoGenInput, uid, deptID int64) (string, error) {
+	payload, err := json.Marshal(shortVideoPayload{
 		StoryboardID:   in.StoryboardID,
 		ProjectID:      in.ProjectID,
 		SourceImageIDs: in.SourceImageIDs,
@@ -904,10 +954,13 @@ func (s *ShortVideoService) Generate(ctx context.Context, in *ShortVideoGenInput
 		UserID:         uid,
 		DeptID:         deptID,
 	})
-	return s.tc.Enqueue(ctx, TaskVideoGenerate, payload, asynq.Queue("default"), asynq.MaxRetry(3))
+	if err != nil {
+		return "", fmt.Errorf("marshal video payload: %w", err)
+	}
+	return s.tc.Enqueue(ctx, TaskVideoGenerate, payload, asynq.Queue(DefaultQueueDefault), asynq.MaxRetry(DefaultMaxRetry))
 }
 
-func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *InvocationService) asynq.HandlerFunc {
+func (s *shortVideoService) HandleGenerateTask(modelSvc ModelService, invSvc InvocationService) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p shortVideoPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -918,8 +971,14 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 		start := time.Now()
 
 		// 先建占位记录,worker 后续更新它的 URL/状态
-		srcJSON, _ := json.Marshal(p.SourceImageIDs)
-		paramJSON, _ := json.Marshal(p.Params)
+		srcJSON, err := json.Marshal(p.SourceImageIDs)
+		if err != nil {
+			srcJSON = []byte("[]")
+		}
+		paramJSON, err := json.Marshal(p.Params)
+		if err != nil {
+			paramJSON = []byte("{}")
+		}
 		sv := &model.ShortVideo{
 			ProjectID:      p.ProjectID,
 			StoryboardID:   p.StoryboardID,
@@ -932,14 +991,18 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 		}
 		sv.CreatedBy = p.UserID
 		if err := s.r.Short.Create(ctx, sv); err != nil {
-			s.publish(topic, "error", 0, "persist short video init failed: "+err.Error())
+			s.log.Error("persist short video init failed", zap.Int64("storyboard_id", p.StoryboardID), zap.Error(err))
+			s.publish(topic, "error", 0, "初始化视频记录失败")
 			return err
 		}
 
 		ad, m, err := modelSvc.GetAdapter(ctx, p.ModelID)
 		if err != nil {
-			_ = s.r.Short.UpdateStatus(ctx, sv.ID, "failed", err.Error())
-			s.publish(topic, "error", 0, "video model unavailable: "+err.Error())
+			s.log.Error("video model unavailable", zap.Int64("short_id", sv.ID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			if uerr := s.r.Short.UpdateStatus(ctx, sv.ID, "failed", "adapter unavailable"); uerr != nil {
+				s.log.Warn("update short video status failed", zap.Int64("id", sv.ID), zap.Error(uerr))
+			}
+			s.publish(topic, "error", 0, "视频模型不可用")
 			endErr := time.Now()
 			invSvc.Log(ctx, &LogParams{
 				ModelID: p.ModelID, UserID: p.UserID, DeptID: p.DeptID, ProjectID: p.ProjectID,
@@ -951,7 +1014,9 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 			return err
 		}
 		if ad.Type() != adapter.TypeVideo {
-			_ = s.r.Short.UpdateStatus(ctx, sv.ID, "failed", "not a video model")
+			if uerr := s.r.Short.UpdateStatus(ctx, sv.ID, "failed", "not a video model"); uerr != nil {
+				s.log.Warn("update short video status failed", zap.Int64("id", sv.ID), zap.Error(uerr))
+			}
 			s.publish(topic, "error", 0, "model is not a video model")
 			endErr := time.Now()
 			invSvc.Log(ctx, &LogParams{
@@ -965,11 +1030,21 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 		}
 		s.publish(topic, "progress", 0.3, "calling video model "+m.Code)
 
-		// 把入参中的图片 URL 注入到 inputs
+		// 把入参中的图片 URL 注入到 inputs (批量查询避免 N+1)
 		inputs := make([]string, 0, len(p.SourceImageIDs))
-		for _, id := range p.SourceImageIDs {
-			if img, _ := s.r.Image.Get(ctx, id); img != nil && img.URL != "" {
-				inputs = append(inputs, img.URL)
+		if len(p.SourceImageIDs) > 0 {
+			var imgs []model.Image
+			if err := s.r.DB.WithContext(ctx).Model(&model.Image{}).
+				Where("id IN ?", p.SourceImageIDs).Find(&imgs).Error; err == nil {
+				imgMap := make(map[int64]*model.Image, len(imgs))
+				for i := range imgs {
+					imgMap[imgs[i].ID] = &imgs[i]
+				}
+				for _, id := range p.SourceImageIDs {
+					if img := imgMap[id]; img != nil && img.URL != "" {
+						inputs = append(inputs, img.URL)
+					}
+				}
 			}
 		}
 		req := &adapter.Request{
@@ -977,10 +1052,15 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 			Inputs: inputs,
 			Params: p.Params,
 		}
-		resp, err := ad.Generate(ctx, req)
+		genCtx, cancel := context.WithTimeout(ctx, getTimeout("TIMEOUT_VIDEO_GEN", 120))
+		defer cancel()
+		resp, err := ad.Generate(genCtx, req)
 		if err != nil {
-			_ = s.r.Short.UpdateStatus(ctx, sv.ID, "failed", err.Error())
-			s.publish(topic, "error", 0, "video model call failed: "+err.Error())
+			s.log.Error("video model call failed", zap.Int64("short_id", sv.ID), zap.Int64("model_id", p.ModelID), zap.Error(err))
+			if uerr := s.r.Short.UpdateStatus(ctx, sv.ID, "failed", "model call failed"); uerr != nil {
+				s.log.Warn("update short video status failed", zap.Int64("id", sv.ID), zap.Error(uerr))
+			}
+			s.publish(topic, "error", 0, "视频生成失败")
 			endErr := time.Now()
 			invSvc.Log(ctx, &LogParams{
 				ModelID: p.ModelID, UserID: p.UserID, DeptID: p.DeptID, ProjectID: p.ProjectID,
@@ -992,7 +1072,9 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 			return err
 		}
 		if len(resp.VideoURLs) == 0 {
-			_ = s.r.Short.UpdateStatus(ctx, sv.ID, "failed", "no video url")
+			if uerr := s.r.Short.UpdateStatus(ctx, sv.ID, "failed", "no video url"); uerr != nil {
+				s.log.Warn("update short video status failed", zap.Int64("id", sv.ID), zap.Error(uerr))
+			}
 			s.publish(topic, "error", 0, "video model returned no URL")
 			endErr := time.Now()
 			invSvc.Log(ctx, &LogParams{
@@ -1012,7 +1094,8 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 		sv.Height = toIntFromAny(resp.Raw["height"])
 		sv.Status = "succeeded"
 		if err := s.r.Short.Update(ctx, sv); err != nil {
-			s.publish(topic, "error", 0, "persist video failed: "+err.Error())
+			s.log.Error("persist video failed", zap.Int64("short_id", sv.ID), zap.Error(err))
+			s.publish(topic, "error", 0, "保存视频失败")
 			return err
 		}
 
@@ -1035,7 +1118,7 @@ func (s *ShortVideoService) HandleGenerateTask(modelSvc *ModelService, invSvc *I
 	}
 }
 
-func (s *ShortVideoService) publish(topic, evType string, pct float64, msg string) {
+func (s *shortVideoService) publish(topic, evType string, pct float64, msg string) {
 	if s.hub == nil {
 		return
 	}
@@ -1044,19 +1127,20 @@ func (s *ShortVideoService) publish(topic, evType string, pct float64, msg strin
 
 // ============== FullVideoService / PipelineService 占位 ==============
 
-type FullVideoService struct {
+type fullVideoService struct {
 	r        *repo.Repositories
-	tc       *queue.Client
+	tc       queue.TaskClient
 	hub      *ws.Hub
 	store    storage.Storage
-	modelSvc *ModelService
-	invSvc   *InvocationService
+	modelSvc ModelService
+	invSvc   InvocationService
 	log      *zap.Logger
 }
 
-type PipelineService struct {
+type pipelineService struct {
 	r        *repo.Repositories
-	tc       *queue.Client
+	db       *gorm.DB
+	tc       queue.TaskClient
 	hub      *ws.Hub
 	registry pipelineRegistry // 由 worker 端注入,server 端可为 nil
 	log      *zap.Logger
@@ -1068,12 +1152,12 @@ type pipelineRegistry interface {
 }
 
 // SetDeps 由 NewServices 后注入
-func (s *PipelineService) SetDeps(hub *ws.Hub, registry pipelineRegistry) {
+func (s *pipelineService) SetDeps(hub *ws.Hub, registry pipelineRegistry) {
 	s.hub = hub
 	s.registry = registry
 }
 
-func (s *PipelineService) publish(topic, evType string, pct float64, msg string) {
+func (s *pipelineService) publish(topic, evType string, pct float64, msg string) {
 	if s.hub == nil {
 		return
 	}
@@ -1086,7 +1170,7 @@ func (s *PipelineService) publish(topic, evType string, pct float64, msg string)
 //   - 先 service 层创建 PipelineRun(status=queued) → 返回 int64 run.ID
 //   - 用 asynq.TaskID("pipeline-run-{run.ID}") 保证幂等(同 run.ID 不会重复入队)
 //   - 前端拿到 run.ID 后 WS 订阅 pipeline:<run.ID> 才能命中
-func (s *PipelineService) Run(ctx context.Context, pipelineID int64, input map[string]any, overrides map[string]any) (int64, error) {
+func (s *pipelineService) Run(ctx context.Context, pipelineID int64, input map[string]any, overrides map[string]any) (int64, error) {
 	pl, err := s.r.Pipeline.Get(ctx, pipelineID)
 	if err != nil {
 		return 0, fmt.Errorf("pipeline.run: load pipeline %d: %w", pipelineID, err)
@@ -1095,7 +1179,10 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID int64, input map[s
 		return 0, fmt.Errorf("pipeline.run: pipeline %d has empty dag", pipelineID)
 	}
 
-	inputBytes, _ := json.Marshal(input)
+	inputBytes, err := json.Marshal(input)
+	if err != nil {
+		return 0, fmt.Errorf("pipeline.run: marshal input: %w", err)
+	}
 	now := time.Now()
 	run := &model.PipelineRun{
 		PipelineID:  pl.ID,
@@ -1105,25 +1192,48 @@ func (s *PipelineService) Run(ctx context.Context, pipelineID int64, input map[s
 		Status:      "queued",
 		StartedAt:   &now,
 	}
-	if err := s.r.Pipeline.CreateRun(ctx, run); err != nil {
-		return 0, fmt.Errorf("pipeline.run: create run: %w", err)
-	}
 
-	payload, _ := json.Marshal(map[string]any{
-		"run_id":      run.ID,
-		"pipeline_id": pipelineID,
-		"input":       input,
-		"overrides":   overrides,
-	})
-	if _, err := s.tc.Enqueue(ctx, TaskPipelineRun, payload,
-		asynq.Queue("critical"),
-		asynq.TaskID(fmt.Sprintf("pipeline-run-%d", run.ID)),
-		asynq.MaxRetry(3),
-	); err != nil {
-		_ = s.r.Pipeline.UpdateRunStatus(ctx, run.ID, "failed", "enqueue: "+err.Error())
-		return 0, err
+	var runID int64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		pipeRepo := s.r.Pipeline.WithDB(tx)
+		if err := pipeRepo.CreateRun(ctx, run); err != nil {
+			return fmt.Errorf("create run: %w", err)
+		}
+		runID = run.ID
+
+		payload, err := json.Marshal(map[string]any{
+			"run_id":      run.ID,
+			"pipeline_id": pipelineID,
+			"input":       input,
+			"overrides":   overrides,
+		})
+		if err != nil {
+			if uerr := pipeRepo.UpdateRunStatus(ctx, run.ID, "failed", "marshal payload failed"); uerr != nil {
+				s.log.Warn("update pipeline run status failed", zap.Int64("run_id", run.ID), zap.Error(uerr))
+			}
+			return fmt.Errorf("marshal payload: %w", err)
+		}
+		if s.tc == nil {
+			if uerr := pipeRepo.UpdateRunStatus(ctx, run.ID, "failed", "task client not configured"); uerr != nil {
+				s.log.Warn("update pipeline run status failed", zap.Int64("run_id", run.ID), zap.Error(uerr))
+			}
+			return errors.New("pipeline service: task client not configured")
+		}
+		if _, err := s.tc.Enqueue(ctx, TaskPipelineRun, payload,
+			asynq.Queue(DefaultQueueCritical),
+			asynq.TaskID(fmt.Sprintf("pipeline-run-%d", run.ID)),
+			asynq.MaxRetry(DefaultMaxRetry),
+		); err != nil {
+			if uerr := pipeRepo.UpdateRunStatus(ctx, run.ID, "failed", "enqueue failed"); uerr != nil {
+				s.log.Warn("update pipeline run status failed", zap.Int64("run_id", run.ID), zap.Error(uerr))
+			}
+			return err
+		}
+		return nil
+	}); err != nil {
+		return 0, fmt.Errorf("pipeline.run: %w", err)
 	}
-	return run.ID, nil
+	return runID, nil
 }
 
 // ============== Asynq Task 名称常量 ==============
@@ -1138,5 +1248,34 @@ const (
 	TaskPipelineRun        = "pipeline.run"
 )
 
+// 脚本状态常量(与 model 约定保持一致)
+const (
+	ScriptStatusUploaded  = 1
+	ScriptStatusSplitting = 2
+	ScriptStatusSplitOK   = 3
+	ScriptStatusFailed    = 4
+)
+
+// 任务与超时常量
+const (
+	DefaultMaxRetry      = 3
+	DefaultQueueDefault  = "default"
+	DefaultQueueCritical = "critical"
+	PersistTimeoutSec    = 60
+	DefaultShotDuration  = 15
+	DefaultEpisodeCount  = 12
+)
+
 // 防止 time 包未使用警告(在某些子集编译时)
 var _ = time.Now
+
+// getTimeout 从环境变量读取超时秒数,未设置或无效时返回默认值。
+// 配置项可通过 config.yaml 的 timeouts 段或对应环境变量设置。
+func getTimeout(envKey string, defaultSec int) time.Duration {
+	if v := os.Getenv(envKey); v != "" {
+		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	return time.Duration(defaultSec) * time.Second
+}

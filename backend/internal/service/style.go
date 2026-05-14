@@ -3,51 +3,55 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
 	"go.uber.org/zap"
 )
 
-type StyleService struct {
+type styleService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
 
 type CreateStyleInput struct {
-	ProjectID       int64    `json:"project_id"`
-	Name            string   `json:"name" binding:"required"`
-	ArtStyle        string   `json:"art_style"`
-	ColorTone       string   `json:"color_tone"`
-	Lighting        string   `json:"lighting"`
+	ProjectID       int64    `json:"project_id" binding:"required,gte=1"`
+	Name            string   `json:"name" binding:"required,min=1,max=100"`
+	ArtStyle        string   `json:"art_style" binding:"omitempty,min=1,max=100"`
+	ColorTone       string   `json:"color_tone" binding:"omitempty,min=1,max=100"`
+	Lighting        string   `json:"lighting" binding:"omitempty,min=1,max=100"`
 	ReferenceImages []string `json:"reference_images"`
-	LoraID          string   `json:"lora_id"`
-	Description     string   `json:"description"`
+	LoraID          string   `json:"lora_id" binding:"omitempty,max=100"`
+	Description     string   `json:"description" binding:"omitempty,max=500"`
 }
 
 type UpdateStyleInput struct {
-	Name            *string  `json:"name"`
-	ArtStyle        *string  `json:"art_style"`
-	ColorTone       *string  `json:"color_tone"`
-	Lighting        *string  `json:"lighting"`
+	Name            *string  `json:"name" binding:"omitempty,min=1,max=100"`
+	ArtStyle        *string  `json:"art_style" binding:"omitempty,min=1,max=100"`
+	ColorTone       *string  `json:"color_tone" binding:"omitempty,min=1,max=100"`
+	Lighting        *string  `json:"lighting" binding:"omitempty,min=1,max=100"`
 	ReferenceImages []string `json:"reference_images"`
-	LoraID          *string  `json:"lora_id"`
-	Description     *string  `json:"description"`
-	Status          *int8    `json:"status"`
+	LoraID          *string  `json:"lora_id" binding:"omitempty,max=100"`
+	Description     *string  `json:"description" binding:"omitempty,max=500"`
+	Status          *int8    `json:"status" binding:"omitempty,gte=0,lte=1"`
 }
 
-func (s *StyleService) List(ctx context.Context, projectID int64) ([]model.Style, error) {
+func (s *styleService) List(ctx context.Context, projectID int64) ([]model.Style, error) {
 	return s.r.Style.List(ctx, projectID)
 }
 
-func (s *StyleService) Get(ctx context.Context, id int64) (*model.Style, error) {
-	return s.r.Style.Get(ctx, id)
+func (s *styleService) Get(ctx context.Context, id int64) (*model.Style, error) {
+	st, err := s.r.Style.Get(ctx, id)
+	if err != nil {
+		return nil, errcode.ErrNotFound
+	}
+	return st, nil
 }
 
-func (s *StyleService) Create(ctx context.Context, in *CreateStyleInput, uid int64) (*model.Style, error) {
+func (s *styleService) Create(ctx context.Context, in *CreateStyleInput, uid int64) (*model.Style, error) {
 	if in.Name == "" {
-		return nil, errors.New("name is required")
+		return nil, errcode.ErrParam.WithMsg("name is required")
 	}
 	st := &model.Style{
 		ProjectID:       in.ProjectID,
@@ -67,7 +71,7 @@ func (s *StyleService) Create(ctx context.Context, in *CreateStyleInput, uid int
 	return st, nil
 }
 
-func (s *StyleService) Update(ctx context.Context, id int64, in *UpdateStyleInput) (*model.Style, error) {
+func (s *styleService) Update(ctx context.Context, id int64, in *UpdateStyleInput) (*model.Style, error) {
 	st, err := s.r.Style.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -102,6 +106,6 @@ func (s *StyleService) Update(ctx context.Context, id int64, in *UpdateStyleInpu
 	return st, nil
 }
 
-func (s *StyleService) Delete(ctx context.Context, id int64) error {
+func (s *styleService) Delete(ctx context.Context, id int64) error {
 	return s.r.Style.Delete(ctx, id)
 }

@@ -13,25 +13,26 @@ import (
 	"gorm.io/gorm"
 )
 
-type RoleService struct {
+type roleService struct {
 	role     *repo.RoleRepo
+	db       *gorm.DB
 	enforcer *casbin.Enforcer
 	log      *zap.Logger
 }
 
 type CreateRoleInput struct {
-	Code        string   `json:"code" binding:"required"`
-	Name        string   `json:"name" binding:"required"`
-	Description string   `json:"description"`
-	DataScope   string   `json:"data_scope"` // self/dept/all
+	Code        string   `json:"code" binding:"required,min=1,max=100"`
+	Name        string   `json:"name" binding:"required,min=1,max=100"`
+	Description string   `json:"description" binding:"omitempty,max=500"`
+	DataScope   string   `json:"data_scope" binding:"omitempty,oneof=self dept all"` // self/dept/all
 	Permissions []string `json:"permissions"`
 }
 
 type UpdateRoleInput struct {
-	Name        *string   `json:"name"`
-	Description *string   `json:"description"`
-	DataScope   *string   `json:"data_scope"`
-	Status      *int8     `json:"status"`
+	Name        *string   `json:"name" binding:"omitempty,min=1,max=100"`
+	Description *string   `json:"description" binding:"omitempty,max=500"`
+	DataScope   *string   `json:"data_scope" binding:"omitempty,oneof=self dept all"`
+	Status      *int8     `json:"status" binding:"omitempty,gte=0,lte=1"`
 	Permissions *[]string `json:"permissions"`
 }
 
@@ -43,7 +44,7 @@ func validDataScope(s string) bool {
 	return false
 }
 
-func (s *RoleService) List(ctx context.Context) ([]model.Role, error) {
+func (s *roleService) List(ctx context.Context) ([]model.Role, error) {
 	list, err := s.role.List(ctx)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
@@ -56,7 +57,7 @@ type RoleWithPermissions struct {
 	Permissions []string `json:"permissions"`
 }
 
-func (s *RoleService) Get(ctx context.Context, id int64) (*RoleWithPermissions, error) {
+func (s *roleService) Get(ctx context.Context, id int64) (*RoleWithPermissions, error) {
 	if id <= 0 {
 		return nil, errcode.ErrParam.WithMsg("invalid role id")
 	}
@@ -74,7 +75,7 @@ func (s *RoleService) Get(ctx context.Context, id int64) (*RoleWithPermissions, 
 	return &RoleWithPermissions{Role: r, Permissions: perms}, nil
 }
 
-func (s *RoleService) ListPermissions(ctx context.Context) ([]model.Permission, error) {
+func (s *roleService) ListPermissions(ctx context.Context) ([]model.Permission, error) {
 	list, err := s.role.ListPermissions(ctx)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
@@ -82,7 +83,7 @@ func (s *RoleService) ListPermissions(ctx context.Context) ([]model.Permission, 
 	return list, nil
 }
 
-func (s *RoleService) Create(ctx context.Context, in *CreateRoleInput) (*model.Role, error) {
+func (s *roleService) Create(ctx context.Context, in *CreateRoleInput) (*model.Role, error) {
 	if in == nil {
 		return nil, errcode.ErrParam
 	}
@@ -98,7 +99,7 @@ func (s *RoleService) Create(ctx context.Context, in *CreateRoleInput) (*model.R
 	if !validDataScope(scope) {
 		return nil, errcode.ErrParam.WithMsg("invalid data_scope")
 	}
-	// 重复 code 校验
+	// 重复 code 校验(在事务外,避免锁范围过大)
 	exist, err := s.role.GetByCode(ctx, code)
 	if err == nil && exist != nil {
 		return nil, errcode.ErrConflict.WithMsg("role code already exists")
@@ -106,29 +107,41 @@ func (s *RoleService) Create(ctx context.Context, in *CreateRoleInput) (*model.R
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
-	r := &model.Role{
-		Code:        code,
-		Name:        name,
-		Description: in.Description,
-		DataScope:   scope,
-		IsSystem:    0,
-		Status:      1,
-	}
-	if err := s.role.Create(ctx, r); err != nil {
+
+	var result *model.Role
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		roleRepo := s.role.WithDB(tx)
+		r := &model.Role{
+			Code:        code,
+			Name:        name,
+			Description: in.Description,
+			DataScope:   scope,
+			IsSystem:    0,
+			Status:      1,
+		}
+		if err := roleRepo.Create(ctx, r); err != nil {
+			return err
+		}
+		if len(in.Permissions) > 0 {
+			if err := roleRepo.SetRolePermissions(ctx, r.ID, in.Permissions); err != nil {
+				return err
+			}
+		}
+		result = r
+		return nil
+	}); err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
+	// Casbin 同步在事务外(非 DB 操作)
 	if len(in.Permissions) > 0 {
-		if err := s.role.SetRolePermissions(ctx, r.ID, in.Permissions); err != nil {
-			return nil, errcode.ErrInternal.Wrap(err)
-		}
 		if err := s.SyncCasbin(ctx); err != nil {
-			s.log.Warn("sync casbin failed after create role", zap.Int64("role_id", r.ID), zap.Error(err))
+			s.log.Warn("sync casbin failed after create role", zap.Int64("role_id", result.ID), zap.Error(err))
 		}
 	}
-	return r, nil
+	return result, nil
 }
 
-func (s *RoleService) Update(ctx context.Context, id int64, in *UpdateRoleInput) (*model.Role, error) {
+func (s *roleService) Update(ctx context.Context, id int64, in *UpdateRoleInput) (*model.Role, error) {
 	if id <= 0 || in == nil {
 		return nil, errcode.ErrParam
 	}
@@ -158,13 +171,23 @@ func (s *RoleService) Update(ctx context.Context, id int64, in *UpdateRoleInput)
 	if in.Status != nil {
 		r.Status = *in.Status
 	}
-	if err := s.role.Update(ctx, r); err != nil {
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		roleRepo := s.role.WithDB(tx)
+		if err := roleRepo.Update(ctx, r); err != nil {
+			return err
+		}
+		if in.Permissions != nil {
+			if err := roleRepo.SetRolePermissions(ctx, id, *in.Permissions); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
+	// Casbin 同步在事务外(非 DB 操作)
 	if in.Permissions != nil {
-		if err := s.role.SetRolePermissions(ctx, id, *in.Permissions); err != nil {
-			return nil, errcode.ErrInternal.Wrap(err)
-		}
 		if err := s.SyncCasbin(ctx); err != nil {
 			s.log.Warn("sync casbin failed after update role", zap.Int64("role_id", id), zap.Error(err))
 		}
@@ -172,7 +195,7 @@ func (s *RoleService) Update(ctx context.Context, id int64, in *UpdateRoleInput)
 	return r, nil
 }
 
-func (s *RoleService) Delete(ctx context.Context, id int64) error {
+func (s *roleService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return errcode.ErrParam.WithMsg("invalid role id")
 	}
@@ -196,26 +219,27 @@ func (s *RoleService) Delete(ctx context.Context, id int64) error {
 
 // SyncCasbin 把数据库里的角色-权限映射重写到 Casbin
 // Casbin policy 用 (role_code, resource, action)
-func (s *RoleService) SyncCasbin(ctx context.Context) error {
+func (s *roleService) SyncCasbin(ctx context.Context) error {
 	if s.enforcer == nil {
 		return nil
 	}
 	pairs, err := s.role.AllRolePermissions(ctx)
 	if err != nil {
-		return err
+		return errcode.ErrInternal.Wrap(err).WithMsg("load role permissions failed")
 	}
 	// 清空所有 p 规则
-	if _, err := s.enforcer.RemoveFilteredPolicy(0); err != nil {
-		return err
-	}
+	s.enforcer.ClearPolicy()
 	for _, p := range pairs {
 		role := p[0]
 		resource, action := splitResAct(p[1])
 		if _, err := s.enforcer.AddPolicy(role, resource, action); err != nil {
-			return err
+			return errcode.ErrInternal.Wrap(err).WithMsg("casbin add policy failed")
 		}
 	}
-	return s.enforcer.SavePolicy()
+	if err := s.enforcer.SavePolicy(); err != nil {
+		return errcode.ErrInternal.Wrap(err).WithMsg("casbin save policy failed")
+	}
+	return nil
 }
 
 func splitResAct(s string) (string, string) {

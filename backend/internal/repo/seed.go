@@ -2,7 +2,10 @@ package repo
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"os"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 	"golang.org/x/crypto/bcrypt"
@@ -148,7 +151,15 @@ func seedAdminUser(db *gorm.DB) (*model.User, error) {
 	if err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), 10)
+	pwd := os.Getenv("SEED_ADMIN_PASSWORD")
+	if pwd == "" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			return nil, fmt.Errorf("generate random password: %w", err)
+		}
+		pwd = hex.EncodeToString(b)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-script-config
+  namespace: ai-script
+data:
+  APP_ENV: "production"
+  APP_PORT: "8080"
+  APP_LOG_LEVEL: "info"
+
+  # MySQL
+  MYSQL_MAX_IDLE: "10"
+  MYSQL_MAX_OPEN: "100"
+  MYSQL_CONN_MAX_LIFETIME: "3600"
+  MYSQL_CONN_MAX_IDLE_TIME: "1800"
+
+  # Redis
+  REDIS_ADDR: "redis:6379"
+  REDIS_DB: "0"
+  REDIS_POOL_SIZE: "20"
+  REDIS_MIN_IDLE_CONNS: "5"
+  REDIS_POOL_TIMEOUT: "5"
+
+  # Migrate
+  MIGRATE_MODE: "auto"
+
+  # Storage (OSS)
+  OSS_PROVIDER: "oss"
+  OSS_REGION: "cn-hangzhou"
+  OSS_BUCKET: "ai-script-prod"
+  OSS_PUBLIC_HOST: "/uploads"
+
+  # Timeouts
+  TIMEOUT_IMAGE_GEN: "120"
+  TIMEOUT_VIDEO_GEN: "120"
+  TIMEOUT_VIDEO_COMPOSE: "300"
+  TIMEOUT_MODEL_HEALTH: "30"
+  TIMEOUT_PIPELINE_RUN: "600"
+
+  # JWT
+  JWT_EXPIRES_IN: "7200"
+  JWT_REFRESH_EXPIRES_IN: "604800"

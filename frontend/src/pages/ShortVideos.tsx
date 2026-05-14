@@ -84,8 +84,9 @@ export default function ShortVideosPage() {
       ]);
       setProjects(p.list);
       setModels(m.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch short video refs failed:', err);
     }
   };
 
@@ -102,7 +103,9 @@ export default function ShortVideosPage() {
         status: 2,
       });
       setCandidateImages(data.list);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch candidate images failed:', err);
       setCandidateImages([]);
     }
   };
@@ -119,7 +122,9 @@ export default function ShortVideosPage() {
       });
       setList(data.list);
       setTotal(data.total);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch short videos failed:', err);
       setList([]);
       setTotal(0);
     } finally {
@@ -171,8 +176,9 @@ export default function ShortVideosPage() {
       });
       setGenTopic(r.topic);
       message.success(`已入队任务 ${r.task_id}`);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('generate short video failed:', err);
     }
   };
 
@@ -181,8 +187,9 @@ export default function ShortVideosPage() {
       await shortVideoApi.delete(id);
       message.success('已删除');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete short video failed:', err);
     }
   };
 

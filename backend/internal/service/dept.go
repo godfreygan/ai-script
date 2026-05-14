@@ -13,18 +13,18 @@ import (
 	"gorm.io/gorm"
 )
 
-type DeptService struct {
+type deptService struct {
 	dept *repo.DeptRepo
 	log  *zap.Logger
 }
 
 type CreateDeptInput struct {
-	Name     string `json:"name" binding:"required"`
-	ParentID int64  `json:"parent_id"`
-	Sort     int    `json:"sort"`
+	Name     string `json:"name" binding:"required,min=1,max=100"`
+	ParentID int64  `json:"parent_id" binding:"gte=0"`
+	Sort     int    `json:"sort" binding:"gte=0,lte=9999"`
 }
 
-func (s *DeptService) List(ctx context.Context) ([]model.Department, error) {
+func (s *deptService) List(ctx context.Context) ([]model.Department, error) {
 	list, err := s.dept.List(ctx)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
@@ -32,7 +32,7 @@ func (s *DeptService) List(ctx context.Context) ([]model.Department, error) {
 	return list, nil
 }
 
-func (s *DeptService) Get(ctx context.Context, id int64) (*model.Department, error) {
+func (s *deptService) Get(ctx context.Context, id int64) (*model.Department, error) {
 	if id <= 0 {
 		return nil, errcode.ErrParam.WithMsg("invalid dept id")
 	}
@@ -46,7 +46,7 @@ func (s *DeptService) Get(ctx context.Context, id int64) (*model.Department, err
 	return d, nil
 }
 
-func (s *DeptService) Create(ctx context.Context, in *CreateDeptInput) (*model.Department, error) {
+func (s *deptService) Create(ctx context.Context, in *CreateDeptInput) (*model.Department, error) {
 	if in == nil {
 		return nil, errcode.ErrParam
 	}
@@ -85,7 +85,7 @@ func (s *DeptService) Create(ctx context.Context, in *CreateDeptInput) (*model.D
 	return d, nil
 }
 
-func (s *DeptService) Update(ctx context.Context, id int64, name string, sort int, status int8) (*model.Department, error) {
+func (s *deptService) Update(ctx context.Context, id int64, name string, sort int, status int8) (*model.Department, error) {
 	if id <= 0 {
 		return nil, errcode.ErrParam.WithMsg("invalid dept id")
 	}
@@ -111,7 +111,7 @@ func (s *DeptService) Update(ctx context.Context, id int64, name string, sort in
 	return d, nil
 }
 
-func (s *DeptService) Delete(ctx context.Context, id int64) error {
+func (s *deptService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return errcode.ErrParam.WithMsg("invalid dept id")
 	}

@@ -47,10 +47,12 @@ func newTestRepos(t *testing.T) *repo.Repositories {
 	return repo.NewRepositories(db, nil)
 }
 
-// newTestRunner 构造 Runner（hub=nil 表示不发 ws 事件）
+// newTestRunner 构造 Runner（hub=nil 表示不发 ws 事件,重试次数设为 1 避免干扰既有测试）
 func newTestRunner(t *testing.T, reg *NodeHandlerRegistry) *Runner {
 	t.Helper()
-	return NewRunner(reg, newTestRepos(t), nil, zap.NewNop())
+	r := NewRunner(reg, newTestRepos(t), nil, zap.NewNop())
+	r.SetMaxAttempts(1)
+	return r
 }
 
 // mockHandler 返回一个统计/可控的 NodeHandler。
@@ -400,6 +402,93 @@ func TestExecute_ContextCancel(t *testing.T) {
 	_, err := runner.Execute(ctx, dagBytes, map[string]any{}, runIDFor(t))
 	if err == nil {
 		t.Fatalf("expect context-related error, got nil (calls=%d)", calls.Load())
+	}
+}
+
+// ---------- 重试与 panic 恢复 ----------
+
+// TestExecute_RetryThenSuccess 验证节点失败后会重试并在成功时停止。
+func TestExecute_RetryThenSuccess(t *testing.T) {
+	reg := NewNodeHandlerRegistry()
+	var calls atomic.Int32
+	reg.Register("flaky", func(nc *NodeContext) (map[string]any, error) {
+		if calls.Add(1) < 3 {
+			return nil, errors.New("transient error")
+		}
+		return map[string]any{"ok": true}, nil
+	})
+
+	dag := DAG{
+		Nodes: []Node{{ID: "a", Type: "flaky"}},
+	}
+	runner := NewRunner(reg, newTestRepos(t), nil, zap.NewNop())
+	runner.SetMaxAttempts(5)
+	dagBytes, _ := json.Marshal(dag)
+	out, err := runner.Execute(context.Background(), dagBytes, map[string]any{}, runIDFor(t))
+	if err != nil {
+		t.Fatalf("expect success after retry, got %v", err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expect 3 calls (2 fails + 1 success), got %d", calls.Load())
+	}
+	if out["nodes"].(map[string]map[string]any)["a"]["ok"] != true {
+		t.Fatalf("expect output ok=true, got %v", out)
+	}
+}
+
+// TestExecute_RetryExhausted 验证重试耗尽后返回错误。
+func TestExecute_RetryExhausted(t *testing.T) {
+	reg := NewNodeHandlerRegistry()
+	var calls atomic.Int32
+	reg.Register("always-fail", func(nc *NodeContext) (map[string]any, error) {
+		calls.Add(1)
+		return nil, errors.New("permanent error")
+	})
+
+	dag := DAG{
+		Nodes: []Node{{ID: "a", Type: "always-fail"}},
+	}
+	runner := NewRunner(reg, newTestRepos(t), nil, zap.NewNop())
+	runner.SetMaxAttempts(3)
+	dagBytes, _ := json.Marshal(dag)
+	_, err := runner.Execute(context.Background(), dagBytes, map[string]any{}, runIDFor(t))
+	if err == nil {
+		t.Fatal("expect error after retry exhausted")
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expect 3 calls (maxAttempts), got %d", calls.Load())
+	}
+}
+
+// TestExecute_PanicRecovered 验证 handler panic 被 recover,不会崩溃 worker。
+func TestExecute_PanicRecovered(t *testing.T) {
+	reg := NewNodeHandlerRegistry()
+	var calls atomic.Int32
+	reg.Register("panic", func(nc *NodeContext) (map[string]any, error) {
+		calls.Add(1)
+		panic("intentional panic")
+	})
+	reg.Register("ok", func(nc *NodeContext) (map[string]any, error) {
+		calls.Add(1)
+		return map[string]any{"ok": true}, nil
+	})
+
+	dag := DAG{
+		Nodes: []Node{{ID: "a", Type: "panic"}, {ID: "b", Type: "ok"}},
+		Edges: []Edge{{From: "a", To: "b"}},
+	}
+	runner := newTestRunner(t, reg)
+	dagBytes, _ := json.Marshal(dag)
+	_, err := runner.Execute(context.Background(), dagBytes, map[string]any{}, runIDFor(t))
+	if err == nil {
+		t.Fatal("expect error from panic node")
+	}
+	if !contains(err.Error(), "panic") {
+		t.Fatalf("expect panic error, got %v", err)
+	}
+	// b 是 a 的下游,a panic 后 b 不应执行
+	if calls.Load() != 1 {
+		t.Fatalf("expect 1 call (only panic node), got %d", calls.Load())
 	}
 }
 

@@ -3,6 +3,7 @@ package response
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
 	"github.com/gin-gonic/gin"
@@ -35,10 +36,29 @@ func Fail(c *gin.Context, err error) {
 		e = errcode.ErrInternal.Wrap(err)
 	}
 	httpCode := mapHTTP(e.Code)
+	// 将业务错误码写入 context,供 metrics 中间件读取
+	c.Set("biz_error_code", e.Code)
 	c.AbortWithStatusJSON(httpCode, Envelope{
 		Code: e.Code, Message: e.Message,
 		RequestID: c.GetString("request_id"),
 	})
+}
+
+// ParsePagination 从 gin query 解析分页参数,返回 (page, pageSize)。
+// 默认值 page=1, pageSize=20, 上限 pageSize=200。
+func ParsePagination(c *gin.Context) (page int, pageSize int) {
+	page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ = strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	return page, pageSize
 }
 
 func mapHTTP(code int) int {

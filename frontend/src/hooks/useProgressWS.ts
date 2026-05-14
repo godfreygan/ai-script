@@ -46,8 +46,9 @@ export function useProgressWS(topic: string | null | undefined) {
         const ev: ProgressEvent = JSON.parse(e.data);
         setLast(ev);
         setEvents((prev) => [...prev.slice(-50), ev]);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('WebSocket message parse error:', err);
       }
     };
 

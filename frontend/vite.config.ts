@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+    esbuild: {
+      drop: mode === 'production' ? ['console', 'debugger'] : [],
+    },
     server: {
       port: Number(env.VITE_PORT || 5173),
       proxy: {
@@ -21,6 +24,17 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    build: { sourcemap: mode !== 'production' },
+    build: {
+      sourcemap: mode !== 'production',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom', 'react-router-dom'],
+            antd: ['antd'],
+            reactflow: ['reactflow', '@reactflow/background', '@reactflow/controls', '@reactflow/minimap'],
+          },
+        },
+      },
+    },
   };
 });

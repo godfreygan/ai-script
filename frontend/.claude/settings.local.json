@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openssl rand *)",
+      "Bash(xxd -p -c 64 /tmp/aes256.key)",
+      "Bash(echo \"HEX:    $\\(xxd -p -c 64 /tmp/aes256.key\\)\")",
+      "Read(//tmp/**)",
+      "Bash(rm /tmp/aes256.key)"
+    ]
+  }
+}

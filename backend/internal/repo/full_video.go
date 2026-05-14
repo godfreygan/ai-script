@@ -48,7 +48,7 @@ func (r *FullVideoRepo) Create(ctx context.Context, f *model.FullVideo) error {
 }
 
 func (r *FullVideoRepo) Update(ctx context.Context, f *model.FullVideo) error {
-	return r.db.WithContext(ctx).Save(f).Error
+	return r.db.WithContext(ctx).Model(&model.FullVideo{}).Select("*").Omit("created_at").Where("id = ?", f.ID).Updates(f).Error
 }
 
 func (r *FullVideoRepo) UpdateStatus(ctx context.Context, id int64, status string, progress int, errMsg string) error {

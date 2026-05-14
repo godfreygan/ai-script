@@ -34,7 +34,11 @@ func (r *HandlerRegistry) Register(name string, h asynq.HandlerFunc) {
 }
 
 func (r *HandlerRegistry) Handlers() map[string]asynq.HandlerFunc {
-	return r.handlers
+	out := make(map[string]asynq.HandlerFunc, len(r.handlers))
+	for k, v := range r.handlers {
+		out[k] = v
+	}
+	return out
 }
 
 // RegisterDefaults 注册默认所有节点处理器(暂用 noop,实际接 adapter)

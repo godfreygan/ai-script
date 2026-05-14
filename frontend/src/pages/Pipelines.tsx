@@ -102,8 +102,9 @@ function decodeDAG(dag: Pipeline['dag']): DAG {
         edges: Array.isArray(o.edges) ? (o.edges as DAGEdge[]) : [],
       };
     }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('parse DAG failed:', err);
   }
   return { ...EMPTY_DAG };
 }

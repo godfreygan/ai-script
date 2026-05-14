@@ -10,6 +10,11 @@ import (
 
 type PipelineRepo struct{ db *gorm.DB }
 
+// WithDB 返回基于指定 *gorm.DB 的临时 PipelineRepo,用于事务内复用
+func (r *PipelineRepo) WithDB(db *gorm.DB) *PipelineRepo {
+	return &PipelineRepo{db: db}
+}
+
 type ListPipelinesQuery struct {
 	Page, PageSize int
 	ProjectID      int64
@@ -115,6 +120,24 @@ func (r *PipelineRepo) UpdateRunStatus(ctx context.Context, id int64, status, er
 func (r *PipelineRepo) UpdateRunOutput(ctx context.Context, id int64, output model.JSON) error {
 	return r.db.WithContext(ctx).Model(&model.PipelineRun{}).Where("id = ?", id).
 		Update("output", output).Error
+}
+
+// UpdateRunStatusIf 仅在当前状态等于 fromStatus 时才更新到 toStatus。
+// 返回 (true, nil) 表示成功更新;(false, nil) 表示状态不匹配;(false, err) 表示 DB 错误。
+// 用于 worker 端原子化抢占 run(queued → running),避免并发重复执行。
+func (r *PipelineRepo) UpdateRunStatusIf(ctx context.Context, id int64, fromStatus, toStatus, errMsg string) (bool, error) {
+	upd := map[string]any{"status": toStatus, "error_msg": errMsg}
+	switch toStatus {
+	case "running":
+		upd["started_at"] = time.Now()
+	case "succeeded", "failed", "cancelled":
+		upd["ended_at"] = time.Now()
+	}
+	res := r.db.WithContext(ctx).Model(&model.PipelineRun{}).Where("id = ? AND status = ?", id, fromStatus).Updates(upd)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // =============== StepRun ===============

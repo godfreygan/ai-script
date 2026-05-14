@@ -7,10 +7,11 @@ import (
 
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
 	"go.uber.org/zap"
 )
 
-type AuditService struct {
+type auditService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
@@ -28,7 +29,7 @@ type LogAuditParams struct {
 }
 
 // Log records an audit entry best-effort. It never returns an error; failures are logged at warn level.
-func (s *AuditService) Log(ctx context.Context, p *LogAuditParams) {
+func (s *auditService) Log(ctx context.Context, p *LogAuditParams) {
 	if p == nil {
 		return
 	}
@@ -81,6 +82,10 @@ func (s *AuditService) Log(ctx context.Context, p *LogAuditParams) {
 }
 
 // List returns audit log entries matching the query.
-func (s *AuditService) List(ctx context.Context, q *repo.ListAuditQuery) ([]model.AuditLog, int64, error) {
-	return s.r.Audit.List(ctx, q)
+func (s *auditService) List(ctx context.Context, q *repo.ListAuditQuery) ([]model.AuditLog, int64, error) {
+	list, total, err := s.r.Audit.List(ctx, q)
+	if err != nil {
+		return nil, 0, errcode.ErrInternal.Wrap(err)
+	}
+	return list, total, nil
 }

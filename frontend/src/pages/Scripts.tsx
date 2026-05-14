@@ -92,8 +92,9 @@ export default function ScriptsPage() {
       });
       setList(data.list);
       setTotal(data.total);
-    } catch {
-      /* api 已 toast */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch scripts failed:', err);
     } finally {
       setLoading(false);
     }
@@ -107,8 +108,9 @@ export default function ScriptsPage() {
       ]);
       setProjects(p.list);
       setModels(m.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch script refs failed:', err);
     }
   };
 
@@ -151,8 +153,9 @@ export default function ScriptsPage() {
       setCreateOpen(false);
       createForm.resetFields();
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('create script failed:', err);
     }
   };
 
@@ -161,8 +164,9 @@ export default function ScriptsPage() {
       await scriptApi.delete(id);
       message.success('已删除');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete script failed:', err);
     }
   };
 
@@ -190,8 +194,9 @@ export default function ScriptsPage() {
       const r = await scriptApi.split(splitTarget.id, v);
       setSplitTopic(r.topic);
       message.success(`已入队任务 ${r.task_id}`);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('split script failed:', err);
     }
   };
 
@@ -202,7 +207,9 @@ export default function ScriptsPage() {
     try {
       const eps = await scriptApi.episodes(sc.id);
       setEpisodes(eps);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch episodes failed:', err);
       setEpisodes([]);
     } finally {
       setEpisodeLoading(false);

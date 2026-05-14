@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type FeatureFlagService struct {
+type featureFlagService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
@@ -57,11 +57,11 @@ func clampRollout(v int) int {
 	return v
 }
 
-func (s *FeatureFlagService) List(ctx context.Context) ([]model.FeatureFlag, error) {
+func (s *featureFlagService) List(ctx context.Context) ([]model.FeatureFlag, error) {
 	return s.r.FeatureFlag.List(ctx)
 }
 
-func (s *FeatureFlagService) Get(ctx context.Context, id int64) (*model.FeatureFlag, error) {
+func (s *featureFlagService) Get(ctx context.Context, id int64) (*model.FeatureFlag, error) {
 	f, err := s.r.FeatureFlag.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -72,7 +72,7 @@ func (s *FeatureFlagService) Get(ctx context.Context, id int64) (*model.FeatureF
 	return f, nil
 }
 
-func (s *FeatureFlagService) GetByKey(ctx context.Context, key string) (*model.FeatureFlag, error) {
+func (s *featureFlagService) GetByKey(ctx context.Context, key string) (*model.FeatureFlag, error) {
 	f, err := s.r.FeatureFlag.GetByKey(ctx, key)
 	if err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ func (s *FeatureFlagService) GetByKey(ctx context.Context, key string) (*model.F
 	return f, nil
 }
 
-func (s *FeatureFlagService) Create(ctx context.Context, in *CreateFlagInput, uid int64) (*model.FeatureFlag, error) {
+func (s *featureFlagService) Create(ctx context.Context, in *CreateFlagInput, uid int64) (*model.FeatureFlag, error) {
 	f := &model.FeatureFlag{
 		Key:         in.Key,
 		Description: in.Description,
@@ -101,7 +101,7 @@ func (s *FeatureFlagService) Create(ctx context.Context, in *CreateFlagInput, ui
 	return f, nil
 }
 
-func (s *FeatureFlagService) Update(ctx context.Context, id int64, in *UpdateFlagInput, uid int64) (*model.FeatureFlag, error) {
+func (s *featureFlagService) Update(ctx context.Context, id int64, in *UpdateFlagInput, uid int64) (*model.FeatureFlag, error) {
 	f, err := s.r.FeatureFlag.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -128,12 +128,16 @@ func (s *FeatureFlagService) Update(ctx context.Context, id int64, in *UpdateFla
 	return f, nil
 }
 
-func (s *FeatureFlagService) Delete(ctx context.Context, id int64) error {
-	return s.r.FeatureFlag.Delete(ctx, id)
+func (s *featureFlagService) Delete(ctx context.Context, id int64) error {
+	err := s.r.FeatureFlag.Delete(ctx, id)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return nil
 }
 
 // Evaluate 评估 key 对应的特性开关是否对当前 context 开启
-func (s *FeatureFlagService) Evaluate(ctx context.Context, key string, fc *FlagContext) (bool, error) {
+func (s *featureFlagService) Evaluate(ctx context.Context, key string, fc *FlagContext) (bool, error) {
 	f, err := s.r.FeatureFlag.GetByKey(ctx, key)
 	if err != nil {
 		return false, err

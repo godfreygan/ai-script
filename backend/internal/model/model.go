@@ -81,20 +81,20 @@ func (Project) TableName() string { return "projects" }
 // 模型注册
 type Model struct {
 	Base
-	Code               string `gorm:"uniqueIndex;size:64" json:"code"`
-	Name               string `gorm:"size:128" json:"name"`
-	Type               string `gorm:"size:16;index" json:"type"` // text/image/video/audio
-	Provider           string `gorm:"size:32" json:"provider"`
-	Endpoint           string `gorm:"size:512" json:"endpoint"`
-	APIKeyEncrypted    []byte `gorm:"column:api_key_encrypted" json:"-"`
-	DefaultParams      JSON   `gorm:"type:json" json:"default_params"`
-	CapabilityTags     JSON   `gorm:"type:json" json:"capability_tags"`
-	Enabled            int8   `gorm:"default:1" json:"enabled"`
-	Priority           int    `json:"priority"`
-	MaxQPS             int    `json:"max_qps"`
-	HealthCheckURL     string `gorm:"size:512" json:"health_check_url"`
-	LastHealthAt       *time.Time `json:"last_health_at"`
-	LastHealthStatus   int8   `json:"last_health_status"`
+	Code             string     `gorm:"uniqueIndex;size:64" json:"code"`
+	Name             string     `gorm:"size:128" json:"name"`
+	Type             string     `gorm:"size:16;index" json:"type"` // text/image/video/audio
+	Provider         string     `gorm:"size:32;index" json:"provider"`
+	Endpoint         string     `gorm:"size:512" json:"endpoint"`
+	APIKeyEncrypted  []byte     `gorm:"column:api_key_encrypted" json:"-"`
+	DefaultParams    JSON       `gorm:"type:json" json:"default_params"`
+	CapabilityTags   JSON       `gorm:"type:json" json:"capability_tags"`
+	Enabled          int8       `gorm:"default:1;index" json:"enabled"`
+	Priority         int        `json:"priority"`
+	MaxQPS           int        `json:"max_qps"`
+	HealthCheckURL   string     `gorm:"size:512" json:"health_check_url"`
+	LastHealthAt     *time.Time `json:"last_health_at"`
+	LastHealthStatus int8       `json:"last_health_status"`
 }
 
 func (Model) TableName() string { return "models" }
@@ -134,7 +134,7 @@ type StepRun struct {
 	RunID     int64      `gorm:"index" json:"run_id"`
 	NodeID    string     `gorm:"size:64" json:"node_id"`
 	NodeType  string     `gorm:"size:64" json:"node_type"`
-	ModelID   int64      `json:"model_id"`
+	ModelID   int64      `gorm:"index" json:"model_id"`
 	Input     JSON       `gorm:"type:json" json:"input"`
 	Output    JSON       `gorm:"type:json" json:"output"`
 	Status    string     `gorm:"size:16;index" json:"status"`

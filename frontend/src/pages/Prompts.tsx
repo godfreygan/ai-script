@@ -70,8 +70,9 @@ export default function PromptsPage() {
       ]);
       setScripts(s.list);
       setModels(m.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch prompt refs failed:', err);
     }
   };
 
@@ -79,7 +80,9 @@ export default function PromptsPage() {
     try {
       const eps = await scriptApi.episodes(sid);
       setEpisodes(eps);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch episodes failed:', err);
       setEpisodes([]);
     }
   };
@@ -93,7 +96,9 @@ export default function PromptsPage() {
       ]);
       setPrompts(ps);
       setCurrent(cur ?? null);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch prompts failed:', err);
       setPrompts([]);
       setCurrent(null);
     } finally {
@@ -167,8 +172,9 @@ export default function PromptsPage() {
       const r = await promptApi.generate(episodeId, v);
       setGenTopic(r.topic);
       message.success(`已入队任务 ${r.task_id}`);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('generate prompt failed:', err);
     }
   };
 
@@ -178,8 +184,9 @@ export default function PromptsPage() {
       await promptApi.setCurrent(id, episodeId);
       message.success('已设为当前版本');
       fetchPrompts(episodeId);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('set current prompt failed:', err);
     }
   };
 

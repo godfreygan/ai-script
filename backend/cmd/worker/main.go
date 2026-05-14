@@ -4,28 +4,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/adapter"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/conf"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/pipeline"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
 	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
-	pkgcasbin "git.myscrm.cn/ganqx01/ai-script/backend/pkg/casbin"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/crypto"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/jwt"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/logger"
+	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/metrics"
 	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/queue"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/storage"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
-	"github.com/redis/go-redis/v9"
+	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -39,51 +33,19 @@ func main() {
 	}
 	defer log.Sync()
 
-	db, err := newDB(cfg)
+	deps, err := InitializeWorker(cfg, log)
 	if err != nil {
-		log.Fatal("init db failed", zap.Error(err))
+		log.Fatal("init worker deps failed", zap.Error(err))
 	}
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.Redis.Addr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
+	rdb := deps.RDB
+	hub := deps.Hub
+	repos := deps.Repos
+	services := deps.Services
+	store := deps.Store
 
-	enforcer, err := pkgcasbin.New(db, "./configs/rbac_model.conf")
-	if err != nil {
-		log.Warn("init casbin failed", zap.Error(err))
-	}
-
-	jwtMgr := jwt.NewManager(cfg.JWT.Secret, cfg.JWT.AccessExpiresIn, cfg.JWT.RefreshExpiresIn)
-	cipher, err := crypto.New(cfg.Crypto.Key)
-	if err != nil {
-		log.Fatal("init cipher failed", zap.Error(err))
-	}
-	taskClient := queue.NewClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	registry := adapter.NewRegistry()
-
-	store, err := storage.New(storage.FactoryConfig{
-		Provider:   cfg.Storage.Provider,
-		Endpoint:   cfg.Storage.Endpoint,
-		Region:     cfg.Storage.Region,
-		Bucket:     cfg.Storage.Bucket,
-		AccessKey:  cfg.Storage.AccessKey,
-		SecretKey:  cfg.Storage.SecretKey,
-		PublicHost: cfg.Storage.PublicHost,
-	})
-	if err != nil {
-		log.Fatal("init storage failed", zap.Error(err))
-	}
-
-	// hub 绑定 Redis,这样 worker 端 publish 的事件能被 server 端订阅到并推给 WS 客户端
-	hub := ws.NewHub(log)
-	hub.BindRedis(rdb, "")
 	hubCtx, cancelHub := context.WithCancel(context.Background())
 	go hub.Run(hubCtx)
 	defer cancelHub()
-
-	repos := repo.NewRepositories(db, rdb)
-	services := service.NewServices(repos, jwtMgr, enforcer, cipher, registry, taskClient, hub, store, log)
 
 	// 加载所有 enabled 模型 adapter
 	loadCtx, lcancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -97,8 +59,9 @@ func main() {
 	pipeline.RegisterDefaultNodeHandlers(nodeReg, &pipeline.DefaultDeps{
 		Repos:      repos,
 		GetAdapter: services.Model.GetAdapter,
+		Store:      store,
 	})
-	runner := pipeline.NewRunner(nodeReg, repos, hub, log)
+	runner := pipeline.NewRunner(nodeReg, repos, hub, log, pipeline.WithMaxConcurrency(10))
 
 	// 注入 Full / Pipeline 运行期依赖(server 端 NewServices 时无法拿到 runner)
 	services.Full.SetDeps(hub, store, services.Model, services.Invoke)
@@ -113,44 +76,107 @@ func main() {
 	handlerReg.Register(service.TaskImageGenerate, services.Image.HandleGenerateTask(services.Model, services.Invoke))
 	handlerReg.Register(service.TaskVideoGenerate, services.Short.HandleGenerateTask(services.Model, services.Invoke))
 	handlerReg.Register(service.TaskVideoCompose, services.Full.HandleComposeTask())
-	handlerReg.Register(service.TaskPipelineRun, pipeline.NewAsynqHandler(repos, runner, log))
+	handlerReg.Register(service.TaskPipelineRun, services.Pipeline.HandleRunTask())
 
-	q := queue.NewAsynqServer(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	q.RegisterHandlers(handlerReg)
+	q := queue.NewAsynqServer(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, cfg.Queue.Concurrency)
+	q.RegisterHandlers(wrapHandlersWithMetrics(handlerReg))
+
+	// 启动队列深度采集器
+	collector := queue.NewMetricsCollector(
+		asynq.RedisClientOpt{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB},
+		15*time.Second,
+	)
+	collector.Start()
+	defer collector.Stop()
+
+	// 记录 worker 并发数
+	metrics.WorkerRunning.Set(16)
 
 	go func() {
 		if err := q.Run(); err != nil {
 			log.Fatal("worker crashed", zap.Error(err))
 		}
 	}()
+
+	// 启动 Worker HTTP 探针:供 K8s liveness/readiness 探测 + Prometheus 指标
+	healthPort := cfg.App.Port + 1000
+	mux := http.NewServeMux()
+	healthSrv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", healthPort),
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+	}
+	mux.HandleFunc("/healthz/live", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/healthz/ready", func(w http.ResponseWriter, r *http.Request) {
+		if rdb != nil {
+			if err := rdb.Ping(r.Context()).Err(); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte("redis_unavailable"))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(metrics.FormatPrometheus()))
+	})
+	go func() {
+		log.Info("worker health server started", zap.Int("port", healthPort))
+		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("health server crashed", zap.Error(err))
+		}
+	}()
+
 	log.Info("worker started",
 		zap.String("redis", cfg.Redis.Addr),
 		zap.Int("redis_db", cfg.Redis.DB),
 	)
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-quit
 
-	q.Shutdown()
+	log.Info("worker shutting down...")
+	// 修复 P0 F3 — 优雅关闭:先停 asynq(等任务完成或超时),再关 hub
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := q.Shutdown(ctx); err != nil {
+		log.Error("worker forced shutdown", zap.Error(err))
+	}
+	// 关闭 health server
+	hcancel, hcancelCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer hcancelCancel()
+	_ = healthSrv.Shutdown(hcancel)
 	cancelHub()
+	metrics.WorkerRunning.Set(0)
 	log.Info("worker exited")
 }
 
-func newDB(cfg *conf.Config) (*gorm.DB, error) {
-	if cfg.MySQL.DSN == "" {
-		return nil, fmt.Errorf("mysql dsn empty")
+// wrapHandlersWithMetrics 为每个 handler 包装指标记录:处理前后计数 + 耗时 histogram。
+func wrapHandlersWithMetrics(reg *pipeline.HandlerRegistry) *pipeline.HandlerRegistry {
+	wrapped := pipeline.NewHandlerRegistry()
+	for taskType, h := range reg.Handlers() {
+		tt := taskType
+		fn := h
+		wrapped.Register(tt, func(ctx context.Context, t *asynq.Task) error {
+			start := time.Now()
+			err := fn(ctx, t)
+			dur := time.Since(start)
+			status := "success"
+			if err != nil {
+				status = "failure"
+			}
+			metrics.RecordTaskProcessed(tt, status)
+			metrics.RecordTaskLatency(tt, dur)
+			return err
+		})
 	}
-	db, err := gorm.Open(mysql.Open(cfg.MySQL.DSN), &gorm.Config{})
-	if err != nil {
-		return nil, err
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, err
-	}
-	sqlDB.SetMaxIdleConns(cfg.MySQL.MaxIdle)
-	sqlDB.SetMaxOpenConns(cfg.MySQL.MaxOpen)
-	sqlDB.SetConnMaxLifetime(time.Hour)
-	return db, nil
+	return wrapped
 }
+

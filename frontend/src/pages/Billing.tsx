@@ -84,8 +84,9 @@ export default function BillingPage() {
       setUsers(u.list);
       setDepts(d);
       setModels(m.list);
-    } catch {
-      /* api 已 toast */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch billing refs failed:', err);
     }
   };
 
@@ -147,8 +148,9 @@ export default function BillingPage() {
         scope_id: quotaScopeId,
       });
       setQuotaList(data || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch quotas failed:', err);
     } finally {
       setQuotaLoading(false);
     }
@@ -199,8 +201,9 @@ export default function BillingPage() {
       message.success('已创建额度');
       setCreateOpen(false);
       fetchQuotas();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('create quota failed:', err);
     }
   };
 
@@ -235,8 +238,9 @@ export default function BillingPage() {
       message.success('已保存');
       setEditOpen(false);
       fetchQuotas();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('update quota failed:', err);
     }
   };
 
@@ -246,8 +250,9 @@ export default function BillingPage() {
       await billingApi.updateQuota(q.id, { enabled: checked ? 1 : 0 });
       message.success(checked ? '已启用' : '已停用');
       fetchQuotas();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('toggle quota failed:', err);
     }
   };
 
@@ -256,8 +261,9 @@ export default function BillingPage() {
       await billingApi.deleteQuota(id);
       message.success('已删除');
       fetchQuotas();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete quota failed:', err);
     }
   };
 
@@ -385,8 +391,9 @@ export default function BillingPage() {
         model_id: dailyModelId,
       });
       setDailyList(data || []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch daily billing failed:', err);
     } finally {
       setDailyLoading(false);
     }

@@ -50,7 +50,7 @@ func (r *PromptRepo) CreateAsCurrent(ctx context.Context, p *model.EpisodePrompt
 }
 
 func (r *PromptRepo) Update(ctx context.Context, p *model.EpisodePrompt) error {
-	return r.db.WithContext(ctx).Save(p).Error
+	return r.db.WithContext(ctx).Model(&model.EpisodePrompt{}).Select("*").Omit("created_at").Where("id = ?", p.ID).Updates(p).Error
 }
 
 func (r *PromptRepo) SetCurrent(ctx context.Context, episodeID, id int64) error {

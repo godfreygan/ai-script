@@ -14,7 +14,7 @@ import (
 
 // newReviewService 用 in-memory sqlite 启 ReviewService。
 // 注意:Submit 需要 FullVideo 表(校验 target),所以也迁过来。
-func newReviewService(t *testing.T) (*ReviewService, *repo.Repositories) {
+func newReviewService(t *testing.T) (ReviewService, *repo.Repositories) {
 	db := newTestDB(t,
 		&model.ReviewFlow{}, &model.ReviewNode{},
 		&model.ReviewRecord{}, &model.ReviewNodeRecord{},

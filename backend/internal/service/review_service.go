@@ -14,32 +14,32 @@ import (
 )
 
 // ReviewService 审核流程业务逻辑
-type ReviewService struct {
+type reviewService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
 
 // NewReviewService 构造审核服务
-func NewReviewService(r *repo.Repositories, log *zap.Logger) *ReviewService {
-	return &ReviewService{r: r, log: log}
+func NewReviewService(r *repo.Repositories, log *zap.Logger) *reviewService {
+	return &reviewService{r: r, log: log}
 }
 
 // SubmitInput 提交审核
 type SubmitInput struct {
-	TargetType string `json:"target_type" binding:"required"` // 默认 "full_video"
-	TargetID   int64  `json:"target_id" binding:"required"`
-	FlowID     int64  `json:"flow_id"` // 0 = 使用 default flow
-	Note       string `json:"note"`
+	TargetType string `json:"target_type" binding:"required,oneof=full_video"` // 默认 "full_video"
+	TargetID   int64  `json:"target_id" binding:"required,gte=1"`
+	FlowID     int64  `json:"flow_id" binding:"omitempty,gte=1"` // 0 = 使用 default flow
+	Note       string `json:"note" binding:"omitempty,max=500"`
 }
 
 // ActInput 审批/驳回/转交
 type ActInput struct {
-	Action  string `json:"action" binding:"required"` // approve / reject / skip
-	Comment string `json:"comment"`
+	Action  string `json:"action" binding:"required,oneof=approve reject skip"` // approve / reject / skip
+	Comment string `json:"comment" binding:"omitempty,max=500"`
 }
 
 // ListFlows 列出所有启用的审核流
-func (s *ReviewService) ListFlows(ctx context.Context) ([]model.ReviewFlow, error) {
+func (s *reviewService) ListFlows(ctx context.Context) ([]model.ReviewFlow, error) {
 	list, err := s.r.Review.ListFlows(ctx)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
@@ -48,7 +48,7 @@ func (s *ReviewService) ListFlows(ctx context.Context) ([]model.ReviewFlow, erro
 }
 
 // GetFlow 获取审核流详情
-func (s *ReviewService) GetFlow(ctx context.Context, id int64) (*model.ReviewFlow, error) {
+func (s *reviewService) GetFlow(ctx context.Context, id int64) (*model.ReviewFlow, error) {
 	f, err := s.r.Review.GetFlow(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -60,7 +60,7 @@ func (s *ReviewService) GetFlow(ctx context.Context, id int64) (*model.ReviewFlo
 }
 
 // ListNodes 列出审核流的节点
-func (s *ReviewService) ListNodes(ctx context.Context, flowID int64) ([]model.ReviewNode, error) {
+func (s *reviewService) ListNodes(ctx context.Context, flowID int64) ([]model.ReviewNode, error) {
 	list, err := s.r.Review.ListNodes(ctx, flowID)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
@@ -69,7 +69,7 @@ func (s *ReviewService) ListNodes(ctx context.Context, flowID int64) ([]model.Re
 }
 
 // Submit 提交审核
-func (s *ReviewService) Submit(ctx context.Context, in *SubmitInput, uid int64) (*model.ReviewRecord, error) {
+func (s *reviewService) Submit(ctx context.Context, in *SubmitInput, uid int64) (*model.ReviewRecord, error) {
 	if in == nil {
 		return nil, errcode.ErrParam.WithMsg("缺少提交参数")
 	}
@@ -151,7 +151,7 @@ func (s *ReviewService) Submit(ctx context.Context, in *SubmitInput, uid int64) 
 }
 
 // ListRecords 列出审核记录
-func (s *ReviewService) ListRecords(ctx context.Context, status string, page, size int) ([]model.ReviewRecord, int64, error) {
+func (s *reviewService) ListRecords(ctx context.Context, status string, page, size int) ([]model.ReviewRecord, int64, error) {
 	list, total, err := s.r.Review.ListRecords(ctx, status, page, size)
 	if err != nil {
 		return nil, 0, errcode.ErrInternal.Wrap(err)
@@ -160,7 +160,7 @@ func (s *ReviewService) ListRecords(ctx context.Context, status string, page, si
 }
 
 // GetRecord 获取审核记录详情
-func (s *ReviewService) GetRecord(ctx context.Context, id int64) (*model.ReviewRecord, error) {
+func (s *reviewService) GetRecord(ctx context.Context, id int64) (*model.ReviewRecord, error) {
 	rec, err := s.r.Review.GetRecord(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -172,7 +172,7 @@ func (s *ReviewService) GetRecord(ctx context.Context, id int64) (*model.ReviewR
 }
 
 // ListActions 列出某条审核记录的所有节点动作
-func (s *ReviewService) ListActions(ctx context.Context, recordID int64) ([]model.ReviewNodeRecord, error) {
+func (s *reviewService) ListActions(ctx context.Context, recordID int64) ([]model.ReviewNodeRecord, error) {
 	list, err := s.r.Review.ListNodeRecords(ctx, recordID)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
@@ -181,7 +181,7 @@ func (s *ReviewService) ListActions(ctx context.Context, recordID int64) ([]mode
 }
 
 // Act 执行审批/驳回/跳过
-func (s *ReviewService) Act(ctx context.Context, recordID int64, in *ActInput, uid int64) (*model.ReviewRecord, error) {
+func (s *reviewService) Act(ctx context.Context, recordID int64, in *ActInput, uid int64) (*model.ReviewRecord, error) {
 	if in == nil {
 		return nil, errcode.ErrParam.WithMsg("缺少操作参数")
 	}
@@ -294,7 +294,7 @@ func (s *ReviewService) Act(ctx context.Context, recordID int64, in *ActInput, u
 }
 
 // Cancel 撤回审核(仅提交人可撤)
-func (s *ReviewService) Cancel(ctx context.Context, recordID int64, uid int64) error {
+func (s *reviewService) Cancel(ctx context.Context, recordID int64, uid int64) error {
 	rec, err := s.GetRecord(ctx, recordID)
 	if err != nil {
 		return err

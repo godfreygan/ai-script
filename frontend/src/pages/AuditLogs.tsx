@@ -101,7 +101,9 @@ export default function AuditLogsPage() {
       });
       setList(data.list || []);
       setTotal(data.total || 0);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch audit list failed:', err);
       setList([]);
       setTotal(0);
     } finally {

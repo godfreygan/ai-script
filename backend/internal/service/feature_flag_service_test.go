@@ -43,10 +43,10 @@ func newTestRepos(db *gorm.DB) *repo.Repositories {
 	return repo.NewRepositories(db, nil)
 }
 
-func newFeatureFlagService(t *testing.T) (*FeatureFlagService, *repo.Repositories) {
+func newFeatureFlagService(t *testing.T) (FeatureFlagService, *repo.Repositories) {
 	db := newTestDB(t, &model.FeatureFlag{})
 	r := newTestRepos(db)
-	return &FeatureFlagService{r: r, log: zap.NewNop()}, r
+	return &featureFlagService{r: r, log: zap.NewNop()}, r
 }
 
 // rolloutHit 复算 service 中的灰度算法,用于测试中精准选 user id。

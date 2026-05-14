@@ -36,7 +36,7 @@ func (r *StoryboardRepo) BulkCreate(ctx context.Context, list []model.Storyboard
 }
 
 func (r *StoryboardRepo) Update(ctx context.Context, s *model.Storyboard) error {
-	return r.db.WithContext(ctx).Save(s).Error
+	return r.db.WithContext(ctx).Model(&model.Storyboard{}).Select("*").Omit("created_at").Where("id = ?", s.ID).Updates(s).Error
 }
 
 func (r *StoryboardRepo) Delete(ctx context.Context, id int64) error {

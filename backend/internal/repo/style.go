@@ -31,7 +31,7 @@ func (r *StyleRepo) Create(ctx context.Context, s *model.Style) error {
 }
 
 func (r *StyleRepo) Update(ctx context.Context, s *model.Style) error {
-	return r.db.WithContext(ctx).Save(s).Error
+	return r.db.WithContext(ctx).Model(&model.Style{}).Select("*").Omit("created_at").Where("id = ?", s.ID).Updates(s).Error
 }
 
 func (r *StyleRepo) Delete(ctx context.Context, id int64) error {

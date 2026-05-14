@@ -66,7 +66,7 @@ func (r *ProjectRepo) GetByID(ctx context.Context, id int64) (*model.Project, er
 }
 
 func (r *ProjectRepo) Update(ctx context.Context, p *model.Project) error {
-	return r.db.WithContext(ctx).Save(p).Error
+	return r.db.WithContext(ctx).Model(&model.Project{}).Select("*").Omit("created_at").Where("id = ?", p.ID).Updates(p).Error
 }
 
 func (r *ProjectRepo) UpdateStatus(ctx context.Context, id int64, status int8) error {

@@ -666,6 +666,21 @@ PARTITION BY RANGE COLUMNS(`created_at`) (
   PARTITION pMax    VALUES LESS THAN (MAXVALUE)
 );
 
+CREATE TABLE IF NOT EXISTS `feature_flags` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `key`         VARCHAR(64)     NOT NULL,
+  `description` VARCHAR(255)    NOT NULL DEFAULT '',
+  `enabled`     TINYINT         NOT NULL DEFAULT 0,
+  `rollout`     INT             NOT NULL DEFAULT 0 COMMENT '0-100,百分比灰度',
+  `rules`       JSON            NULL COMMENT '{users:[1,2],depts:[10],projects:[5]}',
+  `created_by`  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `updated_by`  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_key` (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='灰度/特性开关';
+
 CREATE TABLE IF NOT EXISTS `sys_dicts` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `type`       VARCHAR(64)     NOT NULL,

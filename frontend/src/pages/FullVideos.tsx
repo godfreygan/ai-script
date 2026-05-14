@@ -137,8 +137,9 @@ export default function FullVideosPage() {
       });
       setList(data.list);
       setTotal(data.total);
-    } catch {
-      /* api 已 toast */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch full videos failed:', err);
     } finally {
       setLoading(false);
     }
@@ -152,8 +153,9 @@ export default function FullVideosPage() {
       ]);
       setProjects(p.list);
       setAudioModels(m.list);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fetch full video refs failed:', err);
     }
   };
 
@@ -215,8 +217,9 @@ export default function FullVideosPage() {
       message.success('已创建');
       setCreateOpen(false);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('create full video failed:', err);
     }
   };
 
@@ -251,8 +254,9 @@ export default function FullVideosPage() {
       message.success('已保存');
       setEditOpen(false);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('update full video failed:', err);
     }
   };
 
@@ -265,8 +269,9 @@ export default function FullVideosPage() {
       setRenderingId(fv.id);
       message.info(`已加入渲染队列 (task=${r.task_id})`);
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('render full video failed:', err);
     }
   };
 
@@ -281,8 +286,9 @@ export default function FullVideosPage() {
       await fullVideoApi.delete(id);
       message.success('已删除');
       fetchList();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('delete full video failed:', err);
     }
   };
 

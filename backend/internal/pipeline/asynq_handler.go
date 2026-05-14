@@ -14,9 +14,9 @@ import (
 // NewAsynqHandler 把 asynq 的 pipeline.run 任务桥接到 DAG Runner。
 //
 // 修复 P0 #4:
-//  - 不再 worker 端 CreateRun → service 层已 pre-create + return run.ID
-//  - 用 payload.RunID 而非 asynq UUID,前端 pipeline:<id> topic 才能命中
-//  - 幂等:run.Status 已 succeeded/failed → 直接返回 nil(asynq retry 不重跑)
+//   - 不再 worker 端 CreateRun → service 层已 pre-create + return run.ID
+//   - 用 payload.RunID 而非 asynq UUID,前端 pipeline:<id> topic 才能命中
+//   - 幂等:run.Status 已 succeeded/failed → 直接返回 nil(asynq retry 不重跑)
 //
 // 流程:
 //  1. 解析 RunPayload{RunID, PipelineID, Input, Overrides}
@@ -39,7 +39,7 @@ func NewAsynqHandler(repos *repo.Repositories, runner *Runner, log *zap.Logger) 
 		if err != nil {
 			return fmt.Errorf("pipeline.run: load run %d: %w", p.RunID, err)
 		}
-		if run.Status == "succeeded" || run.Status == "failed" {
+		if run.Status == "succeeded" || run.Status == "failed" || run.Status == "cancelled" {
 			log.Info("pipeline.run skipped (already terminal)",
 				zap.Int64("run_id", p.RunID),
 				zap.String("status", run.Status))
