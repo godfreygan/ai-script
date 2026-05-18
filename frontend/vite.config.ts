@@ -6,7 +6,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
-    resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+    resolve: {
+      alias: { '@': path.resolve(__dirname, 'src') },
+      // 优先 TypeScript 源文件，避免 src 下残留的编译 .js 覆盖 .tsx
+      extensions: ['.mjs', '.mts', '.ts', '.tsx', '.jsx', '.js', '.json'],
+    },
     esbuild: {
       drop: mode === 'production' ? ['console', 'debugger'] : [],
     },

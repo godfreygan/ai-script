@@ -1176,7 +1176,10 @@ func (s *pipelineService) Run(ctx context.Context, pipelineID int64, input map[s
 		return 0, fmt.Errorf("pipeline.run: load pipeline %d: %w", pipelineID, err)
 	}
 	if len(pl.DAG) == 0 {
-		return 0, fmt.Errorf("pipeline.run: pipeline %d has empty dag", pipelineID)
+		return 0, errcode.ErrStateInvalid.WithMsg("流水线 DAG 为空，请先保存节点")
+	}
+	if err := validateDAGHasNodes(json.RawMessage(pl.DAG)); err != nil {
+		return 0, errcode.ErrStateInvalid.WithMsg("流水线没有可执行节点，请先添加节点并保存")
 	}
 
 	inputBytes, err := json.Marshal(input)
@@ -1270,7 +1273,7 @@ const (
 var _ = time.Now
 
 // getTimeout 从环境变量读取超时秒数,未设置或无效时返回默认值。
-// 配置项可通过 config.yaml 的 timeouts 段或对应环境变量设置。
+// 配置项通过 .env 中 TIMEOUTS_* 环境变量设置。
 func getTimeout(envKey string, defaultSec int) time.Duration {
 	if v := os.Getenv(envKey); v != "" {
 		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {

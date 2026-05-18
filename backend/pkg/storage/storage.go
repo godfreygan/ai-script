@@ -36,14 +36,27 @@ func NewLocal(cfg LocalConfig) (Storage, error) {
 	if cfg.BaseDir == "" {
 		return nil, errors.New("storage: base_dir is required")
 	}
-	if err := os.MkdirAll(cfg.BaseDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create base dir: %w", err)
+	if err := ensureLocalBaseDir(cfg.BaseDir); err != nil {
+		return nil, err
 	}
 	host := strings.TrimRight(cfg.PublicHost, "/")
 	if host == "" {
 		host = "/uploads"
 	}
 	return &localStore{baseDir: cfg.BaseDir, publicHost: host}, nil
+}
+
+func ensureLocalBaseDir(dir string) error {
+	if st, err := os.Stat(dir); err == nil {
+		if st.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("storage: base_dir %q exists but is not a directory", dir)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create base dir %q: %w (Docker 只读根文件系统请设置 OSS_BUCKET=/data/uploads 并挂载 uploads_data 卷)", dir, err)
+	}
+	return nil
 }
 
 type localStore struct {

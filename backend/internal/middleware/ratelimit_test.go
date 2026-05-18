@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -182,6 +183,34 @@ func TestGlobalRateLimit_Allowed(t *testing.T) {
 
 	if w.Code == http.StatusTooManyRequests {
 		t.Errorf("unexpected rate limit, body: %s", w.Body.String())
+	}
+}
+
+func TestGlobalRateLimit_ReleaseUsesBackgroundContext(t *testing.T) {
+	s := setupMiniredis(t)
+	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(GlobalRateLimit(rdb))
+	r.GET("/test", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(reqCtx, "GET", "/test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	cancel()
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if got, _ := s.Get("ratelimit:global:concurrent"); got != "" {
+		t.Fatalf("expected global concurrent counter released, got %q", got)
 	}
 }
 

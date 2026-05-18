@@ -7,7 +7,7 @@
 
 ## 通用前提
 
-所有方案都使用根目录 [`.env.example`](/E:/data/go/src/github.com/godfreygan/ai-script/.env.example:1) 作为模板：
+所有方案都使用根目录 `[.env.example](/E:/data/go/src/github.com/godfreygan/ai-script/.env.example:1)` 作为模板：
 
 ```bash
 cp .env.example .env
@@ -206,3 +206,4 @@ cd backend
 - 单机测试：优先 Docker
 - 受限服务器：使用手动编译运行
 - 长期维护成本优先低：优先 Docker
+

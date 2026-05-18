@@ -38,7 +38,7 @@ func main() {
 		fail("invalid password: %v", err)
 	}
 
-	cfg, err := conf.Load("")
+	cfg, err := conf.Load()
 	if err != nil {
 		fail("load config failed: %v", err)
 	}

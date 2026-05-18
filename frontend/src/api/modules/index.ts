@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPost, apiPut, Page } from '../client';
 import { ApiError, appendTraceHint, mapApiErrorMessage } from '../error';
-import { getTraceId } from '../trace';
+import { createTraceId } from '../trace';
+import { useAuthStore } from '@/stores/auth';
 
 // =================== 通用 ===================
 
@@ -261,7 +262,11 @@ export const modelApi = {
   ) => apiPut<Model>(`/models/${id}`, data),
   delete: (id: number) => apiDelete(`/models/${id}`),
   healthcheck: (id: number) =>
-    apiPost<{ healthy: boolean; error?: string }>(`/models/${id}/healthcheck`),
+    apiPost<{ healthy: boolean; error?: string }>(
+      `/models/${id}/healthcheck`,
+      {},
+      { timeout: 90_000, skipErrorToast: true },
+    ),
 };
 
 // =================== Sprint 2 - Script / Episode / Prompt ===================
@@ -509,13 +514,12 @@ export const uploadApi = {
     const fd = new FormData();
     fd.append('namespace', namespace);
     fd.append('file', file);
-    const traceId = getTraceId();
+    const token = useAuthStore.getState().accessToken;
     const resp = await fetch('/api/v1/files/upload', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-        'X-Trace-Id': traceId,
-        trace_id: traceId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'X-Trace-Id': createTraceId(),
       },
       body: fd,
     });

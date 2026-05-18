@@ -55,6 +55,61 @@ interface FormValues {
   enabled?: boolean;
 }
 
+function parseDefaultParams(raw: Model['default_params'] | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return raw;
+}
+
+function parseCapabilityTags(raw: Model['capability_tags'] | unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function modelToFormValues(m: Model): FormValues {
+  const params = parseDefaultParams(m.default_params);
+  return {
+    code: m.code,
+    name: m.name,
+    type: m.type,
+    provider: m.provider,
+    endpoint: m.endpoint,
+    api_key: '',
+    model_name: typeof params._model === 'string' ? params._model : '',
+    capability_tags: parseCapabilityTags(m.capability_tags),
+    priority: m.priority,
+    max_qps: m.max_qps,
+    health_check_url: m.health_check_url || '',
+    enabled: m.enabled === 1,
+  };
+}
+
+const createFormDefaults: Partial<FormValues> = {
+  type: 'image',
+  provider: 'litellm',
+  priority: 10,
+  max_qps: 5,
+  enabled: true,
+};
+
 export default function ModelsPage() {
   const { message } = AntApp.useApp();
   const [list, setList] = useState<Model[]>([]);
@@ -67,7 +122,17 @@ export default function ModelsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Model | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [healthcheckingId, setHealthcheckingId] = useState<number | null>(null);
+  const [formKey, setFormKey] = useState('create');
+  const [formInitialValues, setFormInitialValues] =
+    useState<Partial<FormValues>>(createFormDefaults);
   const [form] = Form.useForm<FormValues>();
+
+  const applyModalFormValues = (values: Partial<FormValues>) => {
+    form.resetFields();
+    form.setFieldsValue(values);
+  };
 
   const fetchList = async () => {
     setLoading(true);
@@ -87,36 +152,36 @@ export default function ModelsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.resetFields();
-    form.setFieldsValue({
-      type: 'image',
-      provider: 'litellm',
-      priority: 10,
-      max_qps: 5,
-      enabled: true,
-    });
+    setFormInitialValues(createFormDefaults);
+    setFormKey(`create-${Date.now()}`);
     setOpen(true);
   };
 
   const openEdit = async (m: Model) => {
-    const full = await modelApi.get(m.id);
-    setEditing(full);
-    const params = (full.default_params || {}) as Record<string, unknown>;
-    form.setFieldsValue({
-      code: full.code,
-      name: full.name,
-      type: full.type,
-      provider: full.provider,
-      endpoint: full.endpoint,
-      api_key: '',
-      model_name: typeof params._model === 'string' ? (params._model as string) : '',
-      capability_tags: full.capability_tags || [],
-      priority: full.priority,
-      max_qps: full.max_qps,
-      health_check_url: full.health_check_url,
-      enabled: full.enabled === 1,
+    setModalLoading(true);
+    try {
+      const full = await modelApi.get(m.id);
+      const values = modelToFormValues(full);
+      setEditing(full);
+      setFormInitialValues(values);
+      setFormKey(`edit-${full.id}`);
+      setOpen(true);
+    } catch (e) {
+      message.error((e as Error).message || '加载模型失败');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) {
+      setEditing(null);
+      return;
+    }
+    // destroyOnClose 下 Form 晚于 open 挂载，须在动画结束后再写入
+    requestAnimationFrame(() => {
+      applyModalFormValues(formInitialValues);
     });
-    setOpen(true);
   };
 
   const onSubmit = async () => {
@@ -170,6 +235,8 @@ export default function ModelsPage() {
   };
 
   const onHealthcheck = async (m: Model) => {
+    if (healthcheckingId !== null) return;
+    setHealthcheckingId(m.id);
     try {
       const r = await modelApi.healthcheck(m.id);
       if (r.healthy) {
@@ -177,8 +244,12 @@ export default function ModelsPage() {
       } else {
         message.error(`${m.name} 异常: ${r.error || '未知'}`);
       }
+      await fetchList();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '探活请求失败';
+      message.error(msg);
     } finally {
-      fetchList();
+      setHealthcheckingId(null);
     }
   };
 
@@ -297,7 +368,13 @@ export default function ModelsPage() {
             width: 230,
             render: (_: unknown, m: Model) => (
               <Space>
-                <Button size="small" icon={<HeartOutlined />} onClick={() => onHealthcheck(m)}>
+                <Button
+                  size="small"
+                  icon={<HeartOutlined />}
+                  loading={healthcheckingId === m.id}
+                  disabled={healthcheckingId !== null && healthcheckingId !== m.id}
+                  onClick={() => onHealthcheck(m)}
+                >
                   探活
                 </Button>
                 <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(m)}>
@@ -322,11 +399,19 @@ export default function ModelsPage() {
         title={editing ? `编辑模型 - ${editing.name}` : '注册模型'}
         open={open}
         width={720}
+        confirmLoading={modalLoading}
         onCancel={() => setOpen(false)}
         onOk={onSubmit}
         destroyOnClose
+        afterOpenChange={handleModalAfterOpenChange}
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form
+          key={formKey}
+          form={form}
+          layout="vertical"
+          preserve={false}
+          initialValues={formInitialValues}
+        >
           <Form.Item
             name="code"
             label="编码 (code)"

@@ -78,6 +78,25 @@ func TestPipelineService_Create(t *testing.T) {
 	}
 }
 
+func TestPipelineService_Create_EmptyDAG(t *testing.T) {
+	ctx := context.Background()
+	db := newPipelineTestDB(t)
+	r := newTestRepos(db)
+
+	svc := &pipelineService{r: r, db: db, tc: nil, hub: nil, registry: nil, log: zap.NewNop()}
+	p, err := svc.Create(ctx, &CreatePipelineInput{
+		ProjectID: 1,
+		Name:      "empty-dag",
+		DAG:       json.RawMessage(`{"nodes":[],"edges":[]}`),
+	}, 1)
+	if err != nil {
+		t.Fatalf("create with empty dag: %v", err)
+	}
+	if p.ID == 0 {
+		t.Fatal("pipeline id should not be zero")
+	}
+}
+
 func TestPipelineService_Create_DefaultEnabled(t *testing.T) {
 	ctx := context.Background()
 	db := newPipelineTestDB(t)

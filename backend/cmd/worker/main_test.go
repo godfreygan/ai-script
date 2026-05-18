@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/godfreygan/ai-script/backend/internal/conf"
@@ -263,58 +261,44 @@ func TestConfigValidate_ModelGateway(t *testing.T) {
 	})
 }
 
-// TestLoadConfig_FileNotExist 验证配置文件不存在时行为(取决于 viper 实现,可能不报错)
-func TestLoadConfig_FileNotExist(t *testing.T) {
-	tmpDir := t.TempDir()
-	nonExistent := filepath.Join(tmpDir, "not_exist.yaml")
-	_, err := conf.Load(nonExistent)
-	// 由于 Validate 会失败(空配置),这里预期返回错误
-	require.Error(t, err)
-}
-
-// TestLoadConfig_ValidMinimalYAML 验证最小有效配置可加载
-func TestLoadConfig_ValidMinimalYAML(t *testing.T) {
-	// 设置环境变量防止 AutomaticEnv 读取到系统空值覆盖配置
-	t.Setenv("MYSQL_DSN", "user:pass@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local")
-	t.Setenv("REDIS_ADDR", "127.0.0.1:6379")
+// TestLoadConfig_FromEnv 验证仅从环境变量加载配置
+func TestLoadConfig_FromEnv(t *testing.T) {
+	t.Setenv("APP_NAME", "test-app")
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("APP_PORT", "8080")
+	t.Setenv("APP_LOG_LEVEL", "debug")
+	t.Setenv("MYSQL_USER", "user")
+	t.Setenv("MYSQL_PASSWORD", "pass")
+	t.Setenv("MYSQL_HOST", "127.0.0.1")
+	t.Setenv("MYSQL_PORT", "3306")
+	t.Setenv("MYSQL_DATABASE", "test")
+	t.Setenv("REDIS_HOST", "127.0.0.1")
+	t.Setenv("REDIS_PORT", "6379")
 	t.Setenv("JWT_SECRET", "this-is-a-32-byte-long-secret-key!")
+	t.Setenv("JWT_EXPIRES_IN", "3600")
 	t.Setenv("CRYPTO_KEY", "12345678901234567890123456789012")
 	t.Setenv("OSS_PROVIDER", "local")
 
-	yaml := `
-app:
-  name: test-app
-  env: dev
-  port: 8080
-  log_level: debug
-jwt:
-  secret: this-is-a-32-byte-long-secret-key!
-  access_expires_in: 3600
-  refresh_expires_in: 86400
-mysql:
-  dsn: "user:pass@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local"
-redis:
-  addr: "127.0.0.1:6379"
-storage:
-  provider: local
-crypto:
-  key: "12345678901234567890123456789012"
-`
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "config.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(yaml), 0644))
-
-	cfg, err := conf.Load(path)
+	cfg, err := conf.Load()
 	require.NoError(t, err)
 	assert.Equal(t, "test-app", cfg.App.Name)
 	assert.Equal(t, "dev", cfg.App.Env)
 	assert.Equal(t, 8080, cfg.App.Port)
 	assert.Equal(t, "debug", cfg.App.LogLevel)
 	assert.Equal(t, "this-is-a-32-byte-long-secret-key!", cfg.JWT.Secret)
-	assert.Equal(t, "user:pass@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local", cfg.MySQL.DSN)
+	assert.Equal(t, 3600, cfg.JWT.AccessExpiresIn)
+	assert.Contains(t, cfg.MySQL.DSN, "user:pass@tcp(127.0.0.1:3306)/test")
 	assert.Equal(t, "127.0.0.1:6379", cfg.Redis.Addr)
 	assert.Equal(t, "local", cfg.Storage.Provider)
 	assert.Equal(t, "12345678901234567890123456789012", cfg.Crypto.Key)
+}
+
+func TestLoadConfig_MissingRequired(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("CRYPTO_KEY", "")
+	t.Setenv("CRYPTO_KEY_BASE64", "")
+	_, err := conf.Load()
+	require.Error(t, err)
 }
 
 // ---------- helpers ----------

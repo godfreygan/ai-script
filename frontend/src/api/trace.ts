@@ -1,25 +1,18 @@
-const TRACE_STORAGE_KEY = 'ai-script-trace-id';
-
 function randomHex(size: number): string {
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj?.getRandomValues) {
+    throw new Error('crypto unavailable');
+  }
   const bytes = new Uint8Array(size);
-  window.crypto.getRandomValues(bytes);
+  cryptoObj.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function createTraceId(): string {
+/** 为单次 HTTP 请求生成新的 trace_id（不缓存、不复用） */
+export function createTraceId(): string {
   try {
     return randomHex(12);
   } catch {
     return `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
   }
-}
-
-export function getTraceId(): string {
-  const cached = window.localStorage.getItem(TRACE_STORAGE_KEY);
-  if (cached) {
-    return cached;
-  }
-  const traceId = createTraceId();
-  window.localStorage.setItem(TRACE_STORAGE_KEY, traceId);
-  return traceId;
 }

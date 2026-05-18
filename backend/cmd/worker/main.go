@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	cfg, err := conf.Load("./configs/config.yaml")
+	cfg, err := conf.Load()
 	if err != nil {
 		panic(fmt.Sprintf("load config failed: %v", err))
 	}

@@ -42,8 +42,10 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
+  modelApi,
   pipelineApi,
   projectApi,
+  type Model,
   type Pipeline,
   type PipelineRun,
   type StepRun,
@@ -69,6 +71,38 @@ const NODE_TYPE_LABELS: Record<string, string> = NODE_TYPES.reduce(
   (acc, cur) => ({ ...acc, [cur.value]: cur.label }),
   {} as Record<string, string>,
 );
+
+/** 节点类型对应的模型 type 筛选；无映射时展示全部已启用模型 */
+const NODE_TYPE_MODEL_TYPE: Record<string, string | undefined> = {
+  'script.split': 'text',
+  'prompt.generate': 'text',
+  'storyboard.generate': 'text',
+  'style.apply': 'text',
+  'image.generate': 'image',
+  'image.upload': 'image',
+  'video.generate': 'video',
+  'video.compose': 'video',
+  'audio.tts': 'audio',
+};
+
+function filterModelsForNodeType(nodeType: string | undefined, models: Model[]): Model[] {
+  const enabled = models.filter((m) => m.enabled === 1);
+  if (!nodeType) return enabled;
+  const want = NODE_TYPE_MODEL_TYPE[nodeType];
+  if (!want) return enabled;
+  return enabled.filter((m) => m.type === want);
+}
+
+function modelSelectLabel(m: Model): string {
+  return `${m.name} (${m.code})`;
+}
+
+function nodeFlowLabel(type: string, modelId: number | undefined, modelList: Model[]): string {
+  const base = NODE_TYPE_LABELS[type] || type;
+  if (!modelId) return base;
+  const m = modelList.find((x) => x.id === modelId);
+  return m ? `${base} · ${m.name}` : `${base} · #${modelId}`;
+}
 
 type DAGNode = {
   id: string;
@@ -177,6 +211,10 @@ export default function PipelinesPage() {
   // ============ 项目下拉 ============
   const [projects, setProjects] = useState<Project[]>([]);
 
+  // ============ 模型列表（节点配置下拉） ============
+  const [models, setModels] = useState<Model[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
   // ============ DAG 画布 ============
   type NodeData = {
     label?: string;
@@ -191,6 +229,7 @@ export default function PipelinesPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTarget, setEditorTarget] = useState<Node | null>(null);
   const [editorForm] = Form.useForm();
+  const editorNodeType = Form.useWatch('type', editorForm);
 
   // ============ 新建 pipeline ============
   const [createOpen, setCreateOpen] = useState(false);
@@ -238,14 +277,35 @@ export default function PipelinesPage() {
     }
   }, [message, selectedId]);
 
+  const fetchModels = useCallback(async () => {
+    setModelsLoading(true);
+    try {
+      const page = await modelApi.list({ page: 1, page_size: 500, enabled: 1 });
+      setModels(page.list || []);
+    } catch (e) {
+      message.error((e as Error).message || '加载模型列表失败');
+    } finally {
+      setModelsLoading(false);
+    }
+  }, [message]);
+
   useEffect(() => {
     refreshList();
     projectApi
       .list({ page: 1, page_size: 100 })
       .then((p) => setProjects(p.list || []))
       .catch(() => undefined);
+    fetchModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const editorModelOptions = useMemo(() => {
+    const list = filterModelsForNodeType(editorNodeType, models);
+    return list.map((m) => ({
+      value: m.id,
+      label: modelSelectLabel(m),
+    }));
+  }, [editorNodeType, models]);
 
   // ============ 加载选中详情 ============
   useEffect(() => {
@@ -297,14 +357,18 @@ export default function PipelinesPage() {
     [setEdges],
   );
 
-  const onNodeClick = (_: unknown, n: Node) => {
-    setEditorTarget(n);
-    const params = (n.data?.params as Record<string, unknown>) || {};
+  useEffect(() => {
+    if (!editorOpen || !editorTarget) return;
+    const params = (editorTarget.data?.params as Record<string, unknown>) || {};
     editorForm.setFieldsValue({
-      type: n.data?.type,
-      model_id: n.data?.model_id,
+      type: editorTarget.data?.type,
+      model_id: editorTarget.data?.model_id,
       params: Object.keys(params).length > 0 ? JSON.stringify(params, null, 2) : '',
     });
+  }, [editorOpen, editorTarget, editorForm]);
+
+  const onNodeClick = (_: unknown, n: Node) => {
+    setEditorTarget(n);
     setEditorOpen(true);
   };
 
@@ -321,6 +385,7 @@ export default function PipelinesPage() {
         }
       }
       const targetId = editorTarget?.id;
+      const modelId = values.model_id ? Number(values.model_id) : undefined;
       setNodes((ns) =>
         ns.map((n) =>
           n.id === targetId
@@ -329,8 +394,8 @@ export default function PipelinesPage() {
                 data: {
                   ...n.data,
                   type: values.type,
-                  label: NODE_TYPE_LABELS[values.type] || values.type,
-                  model_id: values.model_id ? Number(values.model_id) : undefined,
+                  label: nodeFlowLabel(values.type, modelId, models),
+                  model_id: modelId,
                   params,
                 },
               }
@@ -733,10 +798,33 @@ export default function PipelinesPage() {
       >
         <Form layout="vertical" form={editorForm}>
           <Form.Item name="type" label="节点类型" rules={[{ required: true, message: '请选择类型' }]}>
-            <Select options={NODE_TYPES} />
+            <Select
+              options={NODE_TYPES}
+              onChange={() => {
+                editorForm.setFieldValue('model_id', undefined);
+              }}
+            />
           </Form.Item>
-          <Form.Item name="model_id" label="模型 ID">
-            <Input type="number" placeholder="选填,决定该步使用的模型" />
+          <Form.Item
+            name="model_id"
+            label="模型"
+            tooltip={
+              editorNodeType && NODE_TYPE_MODEL_TYPE[editorNodeType]
+                ? `仅显示类型为 ${NODE_TYPE_MODEL_TYPE[editorNodeType]} 且已启用的模型`
+                : '显示全部已启用模型；审核/人工节点通常无需模型'
+            }
+          >
+            <Select
+              allowClear
+              showSearch
+              placeholder="选择模型（选填）"
+              loading={modelsLoading}
+              options={editorModelOptions}
+              notFoundContent={modelsLoading ? <Spin size="small" /> : '暂无可用模型，请先在模型管理中注册'}
+              filterOption={(input, opt) =>
+                String(opt?.label || '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
           </Form.Item>
           <Form.Item name="params" label="参数 (JSON)">
             <Input.TextArea rows={8} placeholder='{"width":1024,"height":1024}' />

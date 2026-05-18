@@ -114,6 +114,18 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  # OSS_PROVIDER=local 时预创建上传目录（server/worker 为 read_only 根文件系统）
+  uploads-init:
+    image: alpine:3.20
+    container_name: ai-script-uploads-init
+    user: "0:0"
+    volumes:
+      - uploads_data:/data/uploads
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /data/uploads /tmp/uploads && chown -R 1000:1000 /data/uploads /tmp/uploads"]
+    restart: "no"
+    networks:
+      - ai-script-net
+
   server:
     build:
       context: ./backend
@@ -121,7 +133,11 @@ services:
     image: ai-script/backend:local
     container_name: ai-script-server
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
+      uploads-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       redis:
@@ -150,13 +166,13 @@ services:
       REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
       REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
       REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-5}
-      OSS_PROVIDER: ${OSS_PROVIDER:-minio}
+      OSS_PROVIDER: ${OSS_PROVIDER:-local}
       OSS_ENDPOINT: ${OSS_ENDPOINT:-http://minio:9000}
       OSS_REGION: ${OSS_REGION:-us-east-1}
-      OSS_BUCKET: ${OSS_BUCKET:-ai-script}
-      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:?OSS_ACCESS_KEY is required}
-      OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
-      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      OSS_BUCKET: ${OSS_BUCKET:-/data/uploads}
+      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:-minioadmin}
+      OSS_SECRET_KEY: ${OSS_SECRET_KEY:-minioadmin}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-/uploads}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7200}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-604800}
@@ -166,6 +182,7 @@ services:
     ports:
       - "${SERVER_PORT:-8080}:8080"
     volumes:
+      - uploads_data:/data/uploads
       - /tmp
     entrypoint: ["/app/server"]
     read_only: true
@@ -200,7 +217,11 @@ services:
     image: ai-script/backend:local
     container_name: ai-script-worker
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
+      uploads-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       redis:
@@ -228,18 +249,19 @@ services:
       REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
       REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-5}
       REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-5}
-      OSS_PROVIDER: ${OSS_PROVIDER:-minio}
+      OSS_PROVIDER: ${OSS_PROVIDER:-local}
       OSS_ENDPOINT: ${OSS_ENDPOINT:-http://minio:9000}
       OSS_REGION: ${OSS_REGION:-us-east-1}
-      OSS_BUCKET: ${OSS_BUCKET:-ai-script}
-      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:?OSS_ACCESS_KEY is required}
-      OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
-      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9000/ai-script}
+      OSS_BUCKET: ${OSS_BUCKET:-/data/uploads}
+      OSS_ACCESS_KEY: ${OSS_ACCESS_KEY:-minioadmin}
+      OSS_SECRET_KEY: ${OSS_SECRET_KEY:-minioadmin}
+      OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-/uploads}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:?CRYPTO_KEY_BASE64 is required}
       MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
       MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
     volumes:
+      - uploads_data:/data/uploads
       - /tmp
     entrypoint: ["/app/worker"]
     read_only: true
@@ -295,6 +317,8 @@ volumes:
   redis_data:
     driver: local
   minio_data:
+    driver: local
+  uploads_data:
     driver: local
 
 networks:

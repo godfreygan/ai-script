@@ -151,7 +151,8 @@ func (s *modelService) Healthcheck(ctx context.Context, id int64) (bool, error) 
 		return false, err
 	}
 	a := s.getOrBuildAdapter(m, apiKey)
-	hcCtx, cancel := context.WithTimeout(ctx, getTimeout("TIMEOUT_MODEL_HEALTH", 30))
+	// 探活可能耗时较长；勿绑定请求 ctx，否则前端超时断连会导致 handler 提前结束且全局限流计数无法释放。
+	hcCtx, cancel := context.WithTimeout(context.Background(), getTimeout("TIMEOUT_MODEL_HEALTH", 30))
 	defer cancel()
 	if err := a.Healthcheck(hcCtx); err != nil {
 		// 用原始 ctx 写库,避免 hcCtx 超时被一并取消导致状态写不回

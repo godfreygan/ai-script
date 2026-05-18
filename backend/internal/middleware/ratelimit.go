@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -12,6 +13,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
+
+// redisOpCtx 限流计数释放不得绑定请求 ctx：客户端超时/断连会取消 ctx，导致 DECR 失败、并发计数泄漏。
+func redisOpCtx() context.Context {
+	return context.Background()
+}
 
 // RateLimit 基于 Redis 令牌桶的按用户限流中间件。
 // 速率: 每分钟 2 个令牌, 桶容量(burst): 5。
@@ -94,7 +100,11 @@ func RateLimit(rdb *redis.Client) gin.HandlerFunc {
 			strconv.FormatInt(now, 10),
 		).Int()
 
-		if err != nil || allowed == 0 {
+		if err != nil {
+			c.Next()
+			return
+		}
+		if allowed == 0 {
 			response.Fail(c, errcode.ErrRateLimit)
 			c.Abort()
 			return
@@ -190,7 +200,12 @@ func IPRateLimit(rdb *redis.Client) gin.HandlerFunc {
 			strconv.FormatInt(now, 10),
 		).Int()
 
-		if err != nil || allowed == 0 {
+		if err != nil {
+			// Redis 不可用时 fail-open，避免整站不可用
+			c.Next()
+			return
+		}
+		if allowed == 0 {
 			response.Fail(c, errcode.ErrRateLimit.WithMsg("IP 请求过于频繁，请稍后再试"))
 			c.Abort()
 			return
@@ -245,17 +260,19 @@ func GlobalRateLimit(rdb *redis.Client) gin.HandlerFunc {
 			strconv.Itoa(windowSec),
 		).Int()
 
-		if err != nil || count > maxConcurrent {
-			// 尝试回滚本次计数
-			_ = releaseScript.Run(c.Request.Context(), rdb, []string{key}).Err()
+		if err != nil {
+			c.Next()
+			return
+		}
+		if count > maxConcurrent {
+			_ = releaseScript.Run(redisOpCtx(), rdb, []string{key}).Err()
 			response.Fail(c, errcode.ErrRateLimit.WithMsg("服务器繁忙，请稍后再试"))
 			c.Abort()
 			return
 		}
 
-		// 请求完成后释放计数
 		defer func() {
-			_ = releaseScript.Run(c.Request.Context(), rdb, []string{key}).Err()
+			_ = releaseScript.Run(redisOpCtx(), rdb, []string{key}).Err()
 		}()
 
 		c.Next()

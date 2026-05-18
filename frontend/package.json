@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "clean:src-js": "find src -name '*.js' -type f -delete",
+    "predev": "npm run clean:src-js",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

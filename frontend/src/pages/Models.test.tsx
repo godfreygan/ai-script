@@ -217,7 +217,13 @@ describe('ModelsPage', () => {
     });
 
     const codeInput = screen.getByLabelText(/编码/i) as HTMLInputElement;
-    expect(codeInput.value).toBe('gpt-4o');
+    const nameInput = screen.getByLabelText('名称') as HTMLInputElement;
+    const endpointInput = screen.getByLabelText(/调用端点/i) as HTMLInputElement;
+    await waitFor(() => {
+      expect(codeInput.value).toBe('gpt-4o');
+      expect(nameInput.value).toBe('GPT-4o');
+      expect(endpointInput.value).toBe('https://api.openai.com/v1');
+    });
   });
 
   it('updates a model successfully', async () => {

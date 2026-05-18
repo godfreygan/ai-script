@@ -172,7 +172,14 @@ func newRouter(
 	// 修复 P0 A5 — CORS 不再 AllowAllOrigins,改用可配置白名单
 	corsCfg := cors.Config{
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Authorization", "X-API-Token", "Content-Type"},
+		AllowHeaders: []string{
+			"Authorization",
+			"X-API-Token",
+			"Content-Type",
+			"X-Trace-Id",
+			"X-Request-Id",
+		},
+		ExposeHeaders: []string{"X-Request-Id", "X-Trace-Id"},
 		MaxAge:       12 * time.Hour,
 	}
 	if len(cfg.App.Origins) > 0 {

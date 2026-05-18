@@ -223,30 +223,58 @@ func (s *pipelineService) HandleRunTask() asynq.HandlerFunc {
 	}
 }
 
-// validateDAG 对流水线 DAG 做基本结构校验:合法 JSON、节点非空、边引用存在、无环。
+// validateDAG 校验 DAG JSON 结构；允许 nodes 为空（新建流水线后在画布编辑）。
 func validateDAG(dagJSON json.RawMessage) error {
 	if len(dagJSON) == 0 {
 		return errors.New("dag is empty")
 	}
-	var dag struct {
-		Nodes []struct {
-			ID      string         `json:"id"`
-			Type    string         `json:"type"`
-			ModelID int64          `json:"model_id"`
-			Params  map[string]any `json:"params"`
-		} `json:"nodes"`
-		Edges []struct {
-			From    string            `json:"from"`
-			To      string            `json:"to"`
-			Mapping map[string]string `json:"mapping"`
-		} `json:"edges"`
+	dag, err := parseDAG(dagJSON)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(dagJSON, &dag); err != nil {
-		return fmt.Errorf("invalid dag json: %w", err)
+	if len(dag.Nodes) == 0 {
+		return nil
+	}
+	return validateDAGNodes(dag)
+}
+
+func validateDAGHasNodes(dagJSON json.RawMessage) error {
+	if len(dagJSON) == 0 {
+		return errors.New("dag is empty")
+	}
+	dag, err := parseDAG(dagJSON)
+	if err != nil {
+		return err
 	}
 	if len(dag.Nodes) == 0 {
 		return errors.New("dag has no nodes")
 	}
+	return validateDAGNodes(dag)
+}
+
+type pipelineDAG struct {
+	Nodes []struct {
+		ID      string         `json:"id"`
+		Type    string         `json:"type"`
+		ModelID int64          `json:"model_id"`
+		Params  map[string]any `json:"params"`
+	} `json:"nodes"`
+	Edges []struct {
+		From    string            `json:"from"`
+		To      string            `json:"to"`
+		Mapping map[string]string `json:"mapping"`
+	} `json:"edges"`
+}
+
+func parseDAG(dagJSON json.RawMessage) (*pipelineDAG, error) {
+	var dag pipelineDAG
+	if err := json.Unmarshal(dagJSON, &dag); err != nil {
+		return nil, fmt.Errorf("invalid dag json: %w", err)
+	}
+	return &dag, nil
+}
+
+func validateDAGNodes(dag *pipelineDAG) error {
 	idx := make(map[string]bool, len(dag.Nodes))
 	for _, n := range dag.Nodes {
 		if n.ID == "" {
