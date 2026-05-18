@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/response"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 )

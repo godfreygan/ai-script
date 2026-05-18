@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/conf"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/pipeline"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/logger"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/metrics"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/queue"
+	"github.com/godfreygan/ai-script/backend/internal/conf"
+	"github.com/godfreygan/ai-script/backend/internal/pipeline"
+	"github.com/godfreygan/ai-script/backend/internal/service"
+	"github.com/godfreygan/ai-script/backend/pkg/logger"
+	"github.com/godfreygan/ai-script/backend/pkg/metrics"
+	"github.com/godfreygan/ai-script/backend/pkg/queue"
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
 )

@@ -46,7 +46,7 @@ spec:
                 name: ai-script-secret
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /healthz/ready
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
@@ -55,7 +55,7 @@ spec:
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /healthz/live
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 20

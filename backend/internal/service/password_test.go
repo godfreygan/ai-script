@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 )
 
 func TestValidatePassword(t *testing.T) {

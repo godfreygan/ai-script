@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/model"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )

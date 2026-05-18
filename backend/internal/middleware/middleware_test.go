@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/jwt"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/jwt"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/casbin/casbin/v2"
 	casbinmodel "github.com/casbin/casbin/v2/model"

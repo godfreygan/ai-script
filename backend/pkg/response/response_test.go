@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 	"github.com/gin-gonic/gin"
 )
 

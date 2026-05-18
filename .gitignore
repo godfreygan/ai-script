@@ -24,6 +24,7 @@ logs/
 Thumbs.db
 
 # Agent worktrees / backups
-.claude/worktrees/
+.claude
 *.bak
 *.bk
+vendor

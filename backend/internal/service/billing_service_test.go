@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
 	"go.uber.org/zap"
 )
 

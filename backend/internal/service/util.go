@@ -3,7 +3,7 @@ package service
 import (
 	"encoding/json"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/model"
 )
 
 func toJSON(v any) model.JSON {

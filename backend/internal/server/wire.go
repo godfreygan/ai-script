@@ -4,7 +4,7 @@
 package server
 
 import (
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/conf"
+	"github.com/godfreygan/ai-script/backend/internal/conf"
 	"github.com/google/wire"
 	"go.uber.org/zap"
 )

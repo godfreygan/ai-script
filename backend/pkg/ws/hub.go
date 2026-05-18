@@ -21,7 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/metrics"
+	"github.com/godfreygan/ai-script/backend/pkg/metrics"
 )
 
 // DefaultRedisChannel 跨进程事件桥接默认 Redis 通道。

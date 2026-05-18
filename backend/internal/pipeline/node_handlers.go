@@ -21,10 +21,10 @@ import (
 	"strings"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/adapter"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/storage"
+	"github.com/godfreygan/ai-script/backend/internal/adapter"
+	"github.com/godfreygan/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/pkg/storage"
 )
 
 // DefaultDeps 节点处理器需要的依赖(由 worker/main.go 在启动时注入)

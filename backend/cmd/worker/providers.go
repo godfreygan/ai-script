@@ -1,12 +1,12 @@
 package main
 
 import (
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/adapter"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/server"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/storage"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
+	"github.com/godfreygan/ai-script/backend/internal/adapter"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/internal/server"
+	"github.com/godfreygan/ai-script/backend/internal/service"
+	"github.com/godfreygan/ai-script/backend/pkg/storage"
+	"github.com/godfreygan/ai-script/backend/pkg/ws"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"

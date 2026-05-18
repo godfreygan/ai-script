@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/model"
 )
 
 func TestToJSON(t *testing.T) {

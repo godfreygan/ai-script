@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/jwt"
+	"github.com/godfreygan/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 

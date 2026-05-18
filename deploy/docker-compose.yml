@@ -132,13 +132,19 @@ services:
       APP_ENV: ${APP_ENV:-prod}
       APP_PORT: "8080"
       APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
-      CONFIG_FILE: ${CONFIG_FILE:-/app/configs/config.yaml}
-      MYSQL_DSN: ${MYSQL_USER:?MYSQL_USER is required}:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@tcp(mysql:3306)/${MYSQL_DATABASE:?MYSQL_DATABASE is required}?charset=utf8mb4&parseTime=true&loc=Local
+      APP_ORIGINS: ${APP_ORIGINS:-https://ai-script.example.com}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+      MYSQL_PARAMS: "${MYSQL_PARAMS:-charset=utf8mb4&parseTime=True&loc=Local}"
       MYSQL_MAX_IDLE: ${MYSQL_MAX_IDLE:-10}
       MYSQL_MAX_OPEN: ${MYSQL_MAX_OPEN:-100}
       MYSQL_CONN_MAX_LIFETIME: ${MYSQL_CONN_MAX_LIFETIME:-3600}
       MYSQL_CONN_MAX_IDLE_TIME: ${MYSQL_CONN_MAX_IDLE_TIME:-1800}
-      REDIS_ADDR: redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
       REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
@@ -154,14 +160,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7200}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-604800}
-      CRYPTO_KEY: ${CRYPTO_KEY:-}
       CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:?CRYPTO_KEY_BASE64 is required}
       MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
       MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
     ports:
       - "8080:8080"
     volumes:
-      - ../backend/configs:/app/configs:ro
       - /tmp
     command: ["/app/server"]
     read_only: true
@@ -206,14 +210,20 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV:-prod}
+      APP_ORIGINS: ${APP_ORIGINS:-https://ai-script.example.com}
       APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
-      CONFIG_FILE: ${CONFIG_FILE:-/app/configs/config.yaml}
-      MYSQL_DSN: ${MYSQL_USER:?MYSQL_USER is required}:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@tcp(mysql:3306)/${MYSQL_DATABASE:?MYSQL_DATABASE is required}?charset=utf8mb4&parseTime=true&loc=Local
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+      MYSQL_PARAMS: "${MYSQL_PARAMS:-charset=utf8mb4&parseTime=True&loc=Local}"
       MYSQL_MAX_IDLE: ${MYSQL_MAX_IDLE:-10}
       MYSQL_MAX_OPEN: ${MYSQL_MAX_OPEN:-100}
       MYSQL_CONN_MAX_LIFETIME: ${MYSQL_CONN_MAX_LIFETIME:-3600}
       MYSQL_CONN_MAX_IDLE_TIME: ${MYSQL_CONN_MAX_IDLE_TIME:-1800}
-      REDIS_ADDR: redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
       REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-20}
@@ -227,12 +237,10 @@ services:
       OSS_SECRET_KEY: ${OSS_SECRET_KEY:?OSS_SECRET_KEY is required}
       OSS_PUBLIC_HOST: ${OSS_PUBLIC_HOST:-http://localhost:9002/ai-script}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      CRYPTO_KEY: ${CRYPTO_KEY:-}
       CRYPTO_KEY_BASE64: ${CRYPTO_KEY_BASE64:?CRYPTO_KEY_BASE64 is required}
       MODEL_GATEWAY_URL: ${MODEL_GATEWAY_URL:-}
       MODEL_GATEWAY_KEY: ${MODEL_GATEWAY_KEY:-}
     volumes:
-      - ../backend/configs:/app/configs:ro
       - /tmp
     command: ["/app/worker"]
     read_only: true

@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
 
 	"github.com/glebarez/sqlite"
 	"github.com/hibiken/asynq"

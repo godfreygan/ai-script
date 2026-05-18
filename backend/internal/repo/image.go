@@ -3,7 +3,7 @@ package repo
 import (
 	"context"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/model"
 	"gorm.io/gorm"
 )
 

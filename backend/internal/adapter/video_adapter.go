@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/circuitbreaker"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/circuitbreaker"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 )
 
 // VideoAdapter 视频生成模型适配器(Kling / Runway / Pika 风格)。

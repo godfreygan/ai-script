@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/storage"
+	"github.com/godfreygan/ai-script/backend/pkg/storage"
 	"go.uber.org/zap"
 )
 

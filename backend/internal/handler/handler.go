@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
+	"github.com/godfreygan/ai-script/backend/internal/service"
+	"github.com/godfreygan/ai-script/backend/pkg/ws"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )

@@ -5,9 +5,9 @@ import (
 	"context"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 	"go.uber.org/zap"
 )
 

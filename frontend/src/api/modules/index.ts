@@ -1,4 +1,6 @@
 import { apiDelete, apiGet, apiPost, apiPut, Page } from '../client';
+import { ApiError, appendTraceHint, mapApiErrorMessage } from '../error';
+import { getTraceId } from '../trace';
 
 // =================== 通用 ===================
 
@@ -507,14 +509,23 @@ export const uploadApi = {
     const fd = new FormData();
     fd.append('namespace', namespace);
     fd.append('file', file);
+    const traceId = getTraceId();
     const resp = await fetch('/api/v1/files/upload', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
+        'X-Trace-Id': traceId,
+        trace_id: traceId,
+      },
       body: fd,
     });
     const body = await resp.json();
     if (body.code !== 0) {
-      throw new Error(body.msg || 'upload failed');
+      const displayMessage = appendTraceHint(mapApiErrorMessage(body, resp.status), body);
+      throw new ApiError(displayMessage, {
+        ...body,
+        status: resp.status,
+      });
     }
     return body.data as UploadResult;
   },

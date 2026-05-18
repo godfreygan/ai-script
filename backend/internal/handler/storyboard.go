@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/model"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/response"
+	"github.com/godfreygan/ai-script/backend/internal/model"
+	"github.com/godfreygan/ai-script/backend/internal/service"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )

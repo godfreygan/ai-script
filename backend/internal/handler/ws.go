@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
+	"github.com/godfreygan/ai-script/backend/pkg/ws"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )

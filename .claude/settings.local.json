@@ -123,7 +123,8 @@
       "Bash(DOCKER_BUILDKIT=0 docker compose build --no-cache backend)",
       "Bash(DOCKER_BUILDKIT=0 docker compose up -d --force-recreate backend worker)",
       "Bash(curl:*)",
-      "Bash(DOCKER_BUILDKIT=0 docker compose build backend)"
+      "Bash(DOCKER_BUILDKIT=0 docker compose build backend)",
+      "Bash(sed 's/.*\\\\\\\\\\\\\\([^\\\\\\\\]*\\\\.go\\\\\\):.*/\\\\1/')"
     ]
   }
 }

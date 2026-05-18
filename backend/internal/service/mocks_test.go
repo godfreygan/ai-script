@@ -3,7 +3,7 @@ package service
 import (
 	"errors"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

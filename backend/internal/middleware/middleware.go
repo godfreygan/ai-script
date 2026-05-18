@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/jwt"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/response"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/jwt"
+	"github.com/godfreygan/ai-script/backend/pkg/response"
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"

@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/conf"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/pipeline"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/metrics"
+	"github.com/godfreygan/ai-script/backend/internal/conf"
+	"github.com/godfreygan/ai-script/backend/internal/pipeline"
+	"github.com/godfreygan/ai-script/backend/pkg/metrics"
 
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"

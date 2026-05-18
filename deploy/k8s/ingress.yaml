@@ -8,11 +8,8 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    # cert-manager: 自动签发/管理 TLS 证书
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    # 可选: 开启 gzip
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
 spec:
   ingressClassName: nginx
   tls:

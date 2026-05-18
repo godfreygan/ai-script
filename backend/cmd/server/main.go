@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/conf"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/server"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/logger"
+	"github.com/godfreygan/ai-script/backend/internal/conf"
+	"github.com/godfreygan/ai-script/backend/internal/server"
+	"github.com/godfreygan/ai-script/backend/pkg/logger"
 	"go.uber.org/zap"
 )
 

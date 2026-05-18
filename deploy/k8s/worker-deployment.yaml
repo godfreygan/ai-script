@@ -37,28 +37,27 @@ spec:
           image: registry.example.com/ai-script/backend:latest
           imagePullPolicy: Always
           command: ["/app/worker"]
+          ports:
+            - containerPort: 9080
+              name: health
           envFrom:
             - configMapRef:
                 name: ai-script-config
             - secretRef:
                 name: ai-script-secret
           readinessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - "ps aux | grep '[w]orker' || exit 1"
+            httpGet:
+              path: /healthz/ready
+              port: 9080
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
           livenessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - "ps aux | grep '[w]orker' || exit 1"
+            httpGet:
+              path: /healthz/live
+              port: 9080
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5

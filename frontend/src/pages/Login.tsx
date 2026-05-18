@@ -3,6 +3,7 @@ import { Form, Input, Button, Card, App as AntApp } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/modules';
+import { ApiError } from '@/api/error';
 import { useAuthStore } from '@/stores/auth';
 
 export default function LoginPage() {
@@ -19,8 +20,10 @@ export default function LoginPage() {
       message.success('登录成功');
       navigate('/');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '登录失败';
-      message.error(msg);
+      if (!(e instanceof ApiError && e.handled)) {
+        const msg = e instanceof Error ? e.message : '登录失败，请稍后重试';
+        message.error(msg);
+      }
     } finally {
       setLoading(false);
     }

@@ -1,13 +1,13 @@
 package service
 
 import (
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/adapter"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/crypto"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/jwt"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/queue"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/storage"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/ws"
+	"github.com/godfreygan/ai-script/backend/internal/adapter"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/pkg/crypto"
+	"github.com/godfreygan/ai-script/backend/pkg/jwt"
+	"github.com/godfreygan/ai-script/backend/pkg/queue"
+	"github.com/godfreygan/ai-script/backend/pkg/storage"
+	"github.com/godfreygan/ai-script/backend/pkg/ws"
 	"github.com/casbin/casbin/v2"
 	"go.uber.org/zap"
 )

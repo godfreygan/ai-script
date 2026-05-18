@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/metrics"
+	"github.com/godfreygan/ai-script/backend/pkg/metrics"
 	"github.com/hibiken/asynq"
 )
 

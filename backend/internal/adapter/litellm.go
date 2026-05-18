@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/circuitbreaker"
-	"git.myscrm.cn/ganqx01/ai-script/backend/pkg/errcode"
+	"github.com/godfreygan/ai-script/backend/pkg/circuitbreaker"
+	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"golang.org/x/sync/singleflight"

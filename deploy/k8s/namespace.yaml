@@ -4,4 +4,4 @@ metadata:
   name: ai-script
   labels:
     name: ai-script
-    env: production
+    env: prod

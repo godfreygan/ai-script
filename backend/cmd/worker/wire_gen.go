@@ -5,10 +5,10 @@
 package main
 
 import (
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/conf"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/repo"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/server"
-	"git.myscrm.cn/ganqx01/ai-script/backend/internal/service"
+	"github.com/godfreygan/ai-script/backend/internal/conf"
+	"github.com/godfreygan/ai-script/backend/internal/repo"
+	"github.com/godfreygan/ai-script/backend/internal/server"
+	"github.com/godfreygan/ai-script/backend/internal/service"
 	"go.uber.org/zap"
 )
 
