@@ -37,8 +37,8 @@ openssl rand -base64 32
 
 ## 常见问题
 
-- `mysql.dsn is empty`：检查 `.env` 是否加载，以及是否已设置 `MYSQL_DSN` 或 `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE`
-- `redis.addr is empty`：检查 `.env` 是否加载，以及是否已设置 `REDIS_ADDR` 或 `REDIS_HOST` / `REDIS_PORT`
+- `mysql.dsn is empty`：检查 `.env` 是否加载，以及是否已设置 `MYSQL_USER` / `MYSQL_PASSWORD`，并按需设置 `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DATABASE`
+- `redis.addr is empty`：检查 `.env` 是否加载，以及是否已设置 `REDIS_HOST`，并按需设置 `REDIS_PORT`
 - `CRYPTO_KEY_BASE64` 格式错误：必须是 32 字节随机密钥的 base64
 - `APP_ORIGINS` 缺失：生产环境会拒绝放开 CORS
 - 视频生成失败：先确认 `ffmpeg` 可执行

@@ -138,8 +138,13 @@ export default function ModelsPage() {
     setLoading(true);
     try {
       const data = await modelApi.list({ page, page_size: pageSize, q, type: typeFilter });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
+    } catch (e) {
+      message.error((e as Error)?.message || '加载模型列表失败');
+      setList([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -188,50 +193,62 @@ export default function ModelsPage() {
     const v = await form.validateFields();
     const defaultParams: Record<string, unknown> = v.model_name ? { _model: v.model_name } : {};
 
-    if (editing) {
-      await modelApi.update(editing.id, {
-        name: v.name,
-        endpoint: v.endpoint,
-        api_key: v.api_key || undefined,
-        default_params: defaultParams,
-        capability_tags: v.capability_tags || [],
-        enabled: v.enabled ? 1 : 2,
-        priority: v.priority,
-        max_qps: v.max_qps,
-        health_check_url: v.health_check_url,
-      });
-      message.success('已更新');
-    } else {
-      await modelApi.create({
-        code: v.code,
-        name: v.name,
-        type: v.type,
-        provider: v.provider,
-        endpoint: v.endpoint,
-        api_key: v.api_key,
-        model_name: v.model_name,
-        default_params: defaultParams,
-        capability_tags: v.capability_tags || [],
-        priority: v.priority,
-        max_qps: v.max_qps,
-        health_check_url: v.health_check_url,
-      });
-      message.success('已创建');
+    try {
+      if (editing) {
+        await modelApi.update(editing.id, {
+          name: v.name,
+          endpoint: v.endpoint,
+          api_key: v.api_key || undefined,
+          default_params: defaultParams,
+          capability_tags: v.capability_tags || [],
+          enabled: v.enabled ? 1 : 2,
+          priority: v.priority,
+          max_qps: v.max_qps,
+          health_check_url: v.health_check_url,
+        });
+        message.success('已更新');
+      } else {
+        await modelApi.create({
+          code: v.code,
+          name: v.name,
+          type: v.type,
+          provider: v.provider,
+          endpoint: v.endpoint,
+          api_key: v.api_key,
+          model_name: v.model_name,
+          default_params: defaultParams,
+          capability_tags: v.capability_tags || [],
+          priority: v.priority,
+          max_qps: v.max_qps,
+          health_check_url: v.health_check_url,
+        });
+        message.success('已创建');
+      }
+      setOpen(false);
+      fetchList();
+    } catch (e) {
+      message.error((e as Error)?.message || '保存失败');
     }
-    setOpen(false);
-    fetchList();
   };
 
   const onDelete = async (m: Model) => {
-    await modelApi.delete(m.id);
-    message.success('已删除');
-    fetchList();
+    try {
+      await modelApi.delete(m.id);
+      message.success('已删除');
+      fetchList();
+    } catch (e) {
+      message.error((e as Error)?.message || '删除失败');
+    }
   };
 
   const onToggleEnabled = async (m: Model, enabled: boolean) => {
-    await modelApi.update(m.id, { enabled: enabled ? 1 : 2 });
-    message.success(enabled ? '已启用' : '已停用');
-    fetchList();
+    try {
+      await modelApi.update(m.id, { enabled: enabled ? 1 : 2 });
+      message.success(enabled ? '已启用' : '已停用');
+      fetchList();
+    } catch (e) {
+      message.error((e as Error)?.message || '状态更新失败');
+    }
   };
 
   const onHealthcheck = async (m: Model) => {

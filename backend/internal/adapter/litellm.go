@@ -76,6 +76,19 @@ func getCircuitBreaker(endpoint string) *circuitbreaker.CircuitBreaker {
 	return actual.(*circuitbreaker.CircuitBreaker)
 }
 
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 5 * time.Minute,
+		Transport: &http.Transport{
+			MaxConnsPerHost:     20,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+}
+
 func NewLiteLLMAdapter(code, baseURL, apiKey, modelName string, mtype ModelType) *LiteLLMAdapter {
 	ep := strings.TrimRight(baseURL, "/")
 	cache, _ := lru.New[string, *cacheEntry](128)
@@ -85,7 +98,7 @@ func NewLiteLLMAdapter(code, baseURL, apiKey, modelName string, mtype ModelType)
 		baseURL:   ep,
 		apiKey:    apiKey,
 		modelName: modelName,
-		client:    &http.Client{Timeout: 5 * time.Minute},
+		client:    newHTTPClient(),
 		cb:        getCircuitBreaker(ep),
 		cache:     cache,
 		cacheTTL:  5 * time.Second,
@@ -423,6 +436,7 @@ func (a *LiteLLMAdapter) Healthcheck(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body) // 排空 Body 以复用 TCP 连接
 	if resp.StatusCode/100 != 2 {
 		return errors.New("unhealthy: HTTP " + fmt.Sprint(resp.StatusCode))
 	}

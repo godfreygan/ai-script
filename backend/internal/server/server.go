@@ -202,19 +202,10 @@ func newRouter(
 		"/uploads",
 	}))
 
-	r.Use(
-		middleware.RequestID(),
-		middleware.AccessLog(log),
-		middleware.Recovery(log),
-		metricsMiddleware(),
-		middleware.Validate(),
-		cors.New(corsCfg),
-		gzipMiddleware,
-		middleware.IPRateLimit(rdb),
-		middleware.GlobalRateLimit(rdb),
-		bodySizeLimitMiddleware(), // 非上传路由限制请求体 1MB，防 DoS
-	)
+	// 修复 P0 — Recovery 必须在 middleware chain 最外层,防止 AccessLog/Validate 等 panic 导致进程崩溃
+	r.Use(middleware.Recovery(log))
 
+	// 修复 P0 — 探针与 metrics 必须在限流之前挂载,避免 K8s 探针被限流误杀
 	// 修复 P0 B3 — /healthz 拆分为 liveness 与 readiness 探针
 	r.GET("/healthz/live", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -244,6 +235,26 @@ func newRouter(
 		c.Header("Content-Type", "text/plain; charset=utf-8")
 		c.String(200, metrics.FormatPrometheus())
 	})
+
+	// 修复 P0 — 404/405 统一返回 JSON 业务格式,避免 gin 默认 HTML 404
+	r.NoRoute(func(c *gin.Context) {
+		response.Fail(c, errcode.ErrNotFound)
+	})
+	r.NoMethod(func(c *gin.Context) {
+		response.Fail(c, errcode.ErrMethodNotAllowed)
+	})
+
+	r.Use(
+		middleware.RequestID(),
+		middleware.AccessLog(log),
+		metricsMiddleware(),
+		middleware.Validate(log),
+		corsWithLog(corsCfg, log),
+		gzipMiddleware,
+		middleware.IPRateLimit(rdb, log),
+		middleware.GlobalRateLimit(rdb, log),
+		bodySizeLimitMiddleware(), // 非上传路由限制请求体 1MB，防 DoS
+	)
 
 	// 修复 P0 F1 — pprof 性能剖析端点(内网 IP 白名单保护,生产环境可用)
 	prf := r.Group("/debug", func(c *gin.Context) {
@@ -401,7 +412,7 @@ func newRouter(
 		authed.DELETE("/scripts/:id", rbac("script", "delete"), h.Script.Delete)
 		authed.GET("/scripts/:id/episodes", rbac("script", "read"), h.Script.ListEpisodes)
 		// 修复 P0 A3 — AI 生成类接口按用户令牌桶限流(2/min, burst=5)
-		authed.POST("/scripts/:id/split", rbac("script", "update"), middleware.RateLimit(rdb), middleware.Idempotency(rdb), h.Script.Split)
+		authed.POST("/scripts/:id/split", rbac("script", "update"), middleware.RateLimit(rdb, log), middleware.Idempotency(rdb), h.Script.Split)
 
 		authed.GET("/episodes/:id/prompts", rbac("prompt", "read"), h.Prompt.ListByEpisode)
 		authed.GET("/episodes/:id/prompts/current", rbac("prompt", "read"), h.Prompt.GetCurrent)
@@ -427,13 +438,13 @@ func newRouter(
 		// Sprint 3 - 图片 ===========
 		authed.GET("/images", rbac("image", "read"), h.Image.List)
 		authed.GET("/images/:id", rbac("image", "read"), h.Image.Get)
-		authed.POST("/images/generate", rbac("image", "create"), middleware.RateLimit(rdb), middleware.Idempotency(rdb), h.Image.Generate)
+		authed.POST("/images/generate", rbac("image", "create"), middleware.RateLimit(rdb, log), middleware.Idempotency(rdb), h.Image.Generate)
 		authed.DELETE("/images/:id", rbac("image", "delete"), h.Image.Delete)
 
 		// Sprint 3 - 短视频 ===========
 		authed.GET("/short_videos", rbac("short_video", "read"), h.Short.List)
 		authed.GET("/short_videos/:id", rbac("short_video", "read"), h.Short.Get)
-		authed.POST("/short_videos/generate", rbac("short_video", "create"), middleware.RateLimit(rdb), middleware.Idempotency(rdb), h.Short.Generate)
+		authed.POST("/short_videos/generate", rbac("short_video", "create"), middleware.RateLimit(rdb, log), middleware.Idempotency(rdb), h.Short.Generate)
 		authed.DELETE("/short_videos/:id", rbac("short_video", "delete"), h.Short.Delete)
 
 		// Sprint 3 - 上传 ===========
@@ -449,7 +460,7 @@ func newRouter(
 		authed.GET("/full_videos/:id", rbac("full_video", "read"), h.Full.Get)
 		authed.PUT("/full_videos/:id", rbac("full_video", "update"), h.Full.Update)
 		authed.DELETE("/full_videos/:id", rbac("full_video", "delete"), h.Full.Delete)
-		authed.POST("/full_videos/:id/render", rbac("full_video", "execute"), middleware.RateLimit(rdb), middleware.Idempotency(rdb), h.Full.Render)
+		authed.POST("/full_videos/:id/render", rbac("full_video", "execute"), middleware.RateLimit(rdb, log), middleware.Idempotency(rdb), h.Full.Render)
 
 		// Sprint 4 - 流水线 ===========
 		authed.GET("/pipelines", rbac("pipeline", "read"), h.Pipeline.List)
@@ -457,7 +468,7 @@ func newRouter(
 		authed.GET("/pipelines/:id", rbac("pipeline", "read"), h.Pipeline.Get)
 		authed.PUT("/pipelines/:id", rbac("pipeline", "update"), h.Pipeline.Update)
 		authed.DELETE("/pipelines/:id", rbac("pipeline", "delete"), h.Pipeline.Delete)
-		authed.POST("/pipelines/:id/run", rbac("pipeline", "execute"), middleware.RateLimit(rdb), middleware.Idempotency(rdb), h.Pipeline.Run)
+		authed.POST("/pipelines/:id/run", rbac("pipeline", "execute"), middleware.RateLimit(rdb, log), middleware.Idempotency(rdb), h.Pipeline.Run)
 		authed.GET("/pipelines/:id/runs", rbac("pipeline", "read"), h.Pipeline.ListRuns)
 		authed.GET("/pipeline_runs/:id", rbac("pipeline", "read"), h.Pipeline.GetRun)
 		authed.GET("/pipeline_runs/:id/steps", rbac("pipeline", "read"), h.Pipeline.ListSteps)
@@ -526,6 +537,24 @@ func metricsMiddleware() gin.HandlerFunc {
 					metrics.RecordBusinessError(codeInt)
 				}
 			}
+		}
+	}
+}
+
+// corsWithLog 包装 cors 中间件，当 CORS 拒绝（返回 403）时记录日志，便于排查跨域来源。
+func corsWithLog(cfg cors.Config, log *zap.Logger) gin.HandlerFunc {
+	handler := cors.New(cfg)
+	return func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		handler(c)
+		if c.IsAborted() && c.Writer.Status() == http.StatusForbidden {
+			log.Warn("cors rejected request",
+				zap.String("rid", c.GetString("request_id")),
+				zap.String("origin", origin),
+				zap.String("path", c.Request.URL.Path),
+				zap.String("method", c.Request.Method),
+				zap.Strings("allow_origins", cfg.AllowOrigins),
+			)
 		}
 	}
 }
@@ -609,6 +638,12 @@ func newDB(cfg *conf.Config, log *zap.Logger) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(maxOpen)
 	sqlDB.SetConnMaxLifetime(connMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("ping mysql: %w", err)
+	}
 	return db, nil
 }
 

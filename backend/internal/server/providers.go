@@ -54,7 +54,7 @@ func ProvideJWTManager(cfg *conf.Config) *jwt.Manager {
 }
 
 // ProvideCipher builds the crypto cipher from config.
-// Validate() 已将 CRYPTO_KEY_BASE64 解码到 Crypto.Key，此处直接使用原始字节。
+// Validate() already decodes CRYPTO_KEY_BASE64 into Crypto.Key.
 func ProvideCipher(cfg *conf.Config) (*crypto.Cipher, error) {
 	return crypto.NewFromBytes([]byte(cfg.Crypto.Key))
 }

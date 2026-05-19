@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "clean:src-js": "find src -name '*.js' -type f -delete",
+    "clean:src-js": "node -e \"const fs=require('fs'); const path=require('path'); const walk=(dir)=>{ for (const entry of fs.readdirSync(dir,{withFileTypes:true})) { const full=path.join(dir,entry.name); if (entry.isDirectory()) walk(full); else if (entry.isFile() && entry.name.endsWith('.js')) fs.unlinkSync(full); } }; walk('src');\"",
     "predev": "npm run clean:src-js",
     "dev": "vite",
     "build": "tsc -b && vite build",

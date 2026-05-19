@@ -135,11 +135,13 @@ export default function FullVideosPage() {
         project_id: projectId,
         status: statusFilter,
       });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch full videos failed:', err);
+      message.error((err as Error)?.message || '加载完整视频列表失败');
+      setList([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -151,11 +153,11 @@ export default function FullVideosPage() {
         projectApi.list({ page_size: 200 }),
         modelApi.list({ page_size: 200, type: 'audio', enabled: 1 }),
       ]);
-      setProjects(p.list);
-      setAudioModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setProjects(p?.list ?? []);
+      setAudioModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch full video refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
@@ -218,8 +220,7 @@ export default function FullVideosPage() {
       setCreateOpen(false);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('create full video failed:', err);
+      message.error((err as Error)?.message || '创建失败');
     }
   };
 
@@ -255,8 +256,7 @@ export default function FullVideosPage() {
       setEditOpen(false);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('update full video failed:', err);
+      message.error((err as Error)?.message || '保存失败');
     }
   };
 
@@ -264,14 +264,13 @@ export default function FullVideosPage() {
   const onRender = async (fv: FullVideo) => {
     try {
       const r = await fullVideoApi.render(fv.id);
-      const topic = r.topic || `full:${fv.id}`;
+      const topic = r?.topic || `full:${fv.id}`;
       setRenderTopic(topic);
       setRenderingId(fv.id);
-      message.info(`已加入渲染队列 (task=${r.task_id})`);
+      message.info(`已加入渲染队列 (task=${r?.task_id})`);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('render full video failed:', err);
+      message.error((err as Error)?.message || '渲染失败');
     }
   };
 
@@ -287,8 +286,7 @@ export default function FullVideosPage() {
       message.success('已删除');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete full video failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 

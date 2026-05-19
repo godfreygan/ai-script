@@ -9,15 +9,24 @@ import (
 	"github.com/godfreygan/ai-script/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"go.uber.org/zap"
 )
 
 // Validate 是一个轻量的全局请求参数校验中间件。
 // 对常见参数进行前置校验，避免非法参数进入业务层。
-func Validate() gin.HandlerFunc {
+func Validate(log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		rid := c.GetString("request_id")
+		path := c.Request.URL.Path
+
 		// 1. 路径参数 id 必须是正整数
 		if idStr := c.Param("id"); idStr != "" {
 			if id, err := strconv.ParseInt(idStr, 10, 64); err != nil || id <= 0 {
+				log.Warn("validate rejected: invalid path param id",
+					zap.String("rid", rid),
+					zap.String("path", path),
+					zap.String("id", idStr),
+				)
 				response.Fail(c, errcode.ErrParam.WithMsg("invalid path param id"))
 				c.Abort()
 				return
@@ -27,6 +36,11 @@ func Validate() gin.HandlerFunc {
 		// 2. 路径参数 uid 必须是正整数
 		if uidStr := c.Param("uid"); uidStr != "" {
 			if uid, err := strconv.ParseInt(uidStr, 10, 64); err != nil || uid <= 0 {
+				log.Warn("validate rejected: invalid path param uid",
+					zap.String("rid", rid),
+					zap.String("path", path),
+					zap.String("uid", uidStr),
+				)
 				response.Fail(c, errcode.ErrParam.WithMsg("invalid path param uid"))
 				c.Abort()
 				return
@@ -38,6 +52,11 @@ func Validate() gin.HandlerFunc {
 		sizeStr := c.Query("size")
 		if pageStr != "" {
 			if page, err := strconv.Atoi(pageStr); err != nil || page < 1 {
+				log.Warn("validate rejected: invalid query param page",
+					zap.String("rid", rid),
+					zap.String("path", path),
+					zap.String("page", pageStr),
+				)
 				response.Fail(c, errcode.ErrParam.WithMsg("invalid query param page"))
 				c.Abort()
 				return
@@ -45,6 +64,11 @@ func Validate() gin.HandlerFunc {
 		}
 		if sizeStr != "" {
 			if size, err := strconv.Atoi(sizeStr); err != nil || size < 1 || size > 1000 {
+				log.Warn("validate rejected: invalid query param size",
+					zap.String("rid", rid),
+					zap.String("path", path),
+					zap.String("size", sizeStr),
+				)
 				response.Fail(c, errcode.ErrParam.WithMsg("invalid query param size"))
 				c.Abort()
 				return
@@ -58,6 +82,12 @@ func Validate() gin.HandlerFunc {
 			c.Request.ContentLength > 0 &&
 			!strings.Contains(c.ContentType(), "multipart/form-data") {
 			if !strings.Contains(c.ContentType(), "application/json") {
+				log.Warn("validate rejected: invalid content-type",
+					zap.String("rid", rid),
+					zap.String("path", path),
+					zap.String("content_type", c.ContentType()),
+					zap.String("method", method),
+				)
 				response.Fail(c, errcode.ErrParam.WithMsg("Content-Type must be application/json"))
 				c.Abort()
 				return

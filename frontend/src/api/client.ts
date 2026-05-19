@@ -3,7 +3,6 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import { message } from 'antd';
 import { useAuthStore } from '@/stores/auth';
 import { ApiError, appendTraceHint, mapApiErrorMessage } from './error';
 import { createTraceId } from './trace';
@@ -36,6 +35,48 @@ const client = axios.create({
   timeout: 30000,
 });
 
+// === 消息注入: 由 main.tsx 在 <AntApp> 内部注入,解决 antd5 静态 message 上下文丢失 ===
+let _messageInstance: any = null;
+export function setMessageInstance(msg: any) {
+  _messageInstance = msg;
+}
+
+function safeToast(type: 'error' | 'success' | 'warning', content: string) {
+  if (_messageInstance?.[type]) {
+    _messageInstance[type](content);
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(`[API ${type}]`, content);
+  }
+}
+
+// === 401 refresh token 自动刷新(队列锁防止并发雪崩) ===
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  const refreshToken = useAuthStore.getState().refreshToken;
+  if (!refreshToken) return false;
+  try {
+    const resp = await client.post<Envelope<{ access_token: string; refresh_token: string; user: unknown }>>(
+      '/auth/refresh',
+      { refresh_token: refreshToken },
+      { skipErrorToast: true },
+    );
+    if (resp.data.code === 0) {
+      const { access_token, refresh_token, user } = resp.data.data as any;
+      useAuthStore.getState().login({
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        user,
+      });
+      return true;
+    }
+  } catch {
+    // refresh 失败,继续向下执行 logout
+  }
+  return false;
+}
+
 function applyRequestHeaders(config: InternalAxiosRequestConfig): void {
   const token = useAuthStore.getState().accessToken;
   const headers = AxiosHeaders.from(config.headers ?? {});
@@ -58,8 +99,9 @@ function isEnvelope(payload: unknown): payload is Envelope<unknown> {
 client.interceptors.request.use((config) => {
   try {
     applyRequestHeaders(config);
-  } catch {
-    // 请求头写入失败不应阻断业务请求
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('applyRequestHeaders failed', e);
   }
   return config;
 });
@@ -69,7 +111,7 @@ client.interceptors.response.use(
     const payload = resp.data;
     if (!isEnvelope(payload)) {
       if (!resp.config.skipErrorToast) {
-        message.error(mapApiErrorMessage(undefined, resp.status));
+        safeToast('error', mapApiErrorMessage(undefined, resp.status));
       }
       return Promise.reject(
         new ApiError(mapApiErrorMessage(undefined, resp.status), {
@@ -84,7 +126,7 @@ client.interceptors.response.use(
         payload,
       );
       if (!resp.config.skipErrorToast) {
-        message.error(displayMessage);
+        safeToast('error', displayMessage);
       }
       return Promise.reject(
         new ApiError(displayMessage, {
@@ -96,7 +138,7 @@ client.interceptors.response.use(
     }
     return resp;
   },
-  (err) => {
+  async (err) => {
     const skipToast = err.config?.skipErrorToast === true;
     const payload = err.response?.data as Envelope<unknown> | undefined;
     const status = err.response?.status as number | undefined;
@@ -106,10 +148,24 @@ client.interceptors.response.use(
     );
 
     if (status === 401) {
-      useAuthStore.getState().logout();
-      window.location.href = '/login';
+      if (!_refreshPromise) {
+        _refreshPromise = tryRefreshToken().finally(() => {
+          _refreshPromise = null;
+        });
+      }
+      const refreshed = await _refreshPromise;
+      if (refreshed && err.config) {
+        // token 刷新成功,重试原请求
+        return client.request(err.config);
+      }
+      // refresh 失败:延迟跳转,给并发请求一个排队等待 refresh 的窗口
+      safeToast('error', '登录已过期,请重新登录');
+      setTimeout(() => {
+        useAuthStore.getState().logout();
+        window.location.href = '/login';
+      }, 50);
       return Promise.reject(
-        new ApiError(displayMessage, {
+        new ApiError('登录已过期', {
           ...(isEnvelope(payload) ? payload : {}),
           status,
           handled: true,
@@ -118,7 +174,7 @@ client.interceptors.response.use(
     }
 
     if (!skipToast) {
-      message.error(displayMessage);
+      safeToast('error', displayMessage);
     }
     return Promise.reject(
       new ApiError(displayMessage, {
@@ -142,9 +198,9 @@ export function escapeHtml(input: string): string {
 export async function apiGet<T>(
   url: string,
   params?: Record<string, unknown>,
-  config?: Parameters<typeof client.get>[2],
+  config?: Parameters<typeof client.get>[1],
 ) {
-  const r = await client.get<Envelope<T>>(url, { params, ...config });
+  const r = await client.get<Envelope<T>>(url, { params, ...(config ?? {}) });
   return r.data.data;
 }
 

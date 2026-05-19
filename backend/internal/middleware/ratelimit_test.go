@@ -9,6 +9,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 func setupMiniredis(t *testing.T) *miniredis.Miniredis {
@@ -30,7 +31,7 @@ func TestRateLimit_NoUID(t *testing.T) {
 	s := setupMiniredis(t)
 	c, w, rdb := setupGinWithRedis(s)
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code != http.StatusUnauthorized {
@@ -43,7 +44,7 @@ func TestRateLimit_UIDInt64(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", int64(42))
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -56,7 +57,7 @@ func TestRateLimit_UIDInt(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", int(42))
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -69,7 +70,7 @@ func TestRateLimit_UIDFloat64(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", float64(42))
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -82,7 +83,7 @@ func TestRateLimit_UIDString(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", "42")
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -95,7 +96,7 @@ func TestRateLimit_UIDStringInvalid(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", "not-a-number")
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code != http.StatusUnauthorized {
@@ -108,7 +109,7 @@ func TestRateLimit_UIDUnsupportedType(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", struct{}{})
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code != http.StatusUnauthorized {
@@ -121,7 +122,7 @@ func TestRateLimit_ExceedBurst(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Set("uid", int64(99))
 
-	handler := RateLimit(rdb)
+	handler := RateLimit(rdb, zap.NewNop())
 
 	// burst = 5, so first 5 should pass, 6th should be rate limited
 	for i := 0; i < 6; i++ {
@@ -140,7 +141,7 @@ func TestIPRateLimit_Allowed(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Request.RemoteAddr = "192.168.1.1:12345"
 
-	handler := IPRateLimit(rdb)
+	handler := IPRateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -153,7 +154,7 @@ func TestIPRateLimit_WithXForwardedFor(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Request.Header.Set("X-Forwarded-For", "10.0.0.1")
 
-	handler := IPRateLimit(rdb)
+	handler := IPRateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -166,7 +167,7 @@ func TestIPRateLimit_EmptyIP(t *testing.T) {
 	c, w, rdb := setupGinWithRedis(s)
 	c.Request.RemoteAddr = ":12345"
 
-	handler := IPRateLimit(rdb)
+	handler := IPRateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -178,7 +179,7 @@ func TestGlobalRateLimit_Allowed(t *testing.T) {
 	s := setupMiniredis(t)
 	c, w, rdb := setupGinWithRedis(s)
 
-	handler := GlobalRateLimit(rdb)
+	handler := GlobalRateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
@@ -192,7 +193,7 @@ func TestGlobalRateLimit_ReleaseUsesBackgroundContext(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(GlobalRateLimit(rdb))
+	r.Use(GlobalRateLimit(rdb, zap.NewNop()))
 	r.GET("/test", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
@@ -226,7 +227,7 @@ func TestGlobalRateLimit_ExceedMaxConcurrent(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request, _ = http.NewRequest("GET", "/test", nil)
 
-	handler := GlobalRateLimit(rdb)
+	handler := GlobalRateLimit(rdb, zap.NewNop())
 	handler(c)
 
 	if w.Code != http.StatusTooManyRequests {

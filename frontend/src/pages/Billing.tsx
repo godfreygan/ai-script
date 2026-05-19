@@ -81,12 +81,12 @@ export default function BillingPage() {
         deptApi.list(),
         modelApi.list({ page_size: 200 }),
       ]);
-      setUsers(u.list);
-      setDepts(d);
-      setModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setUsers(u?.list ?? []);
+      setDepts(d ?? []);
+      setModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch billing refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
@@ -149,8 +149,8 @@ export default function BillingPage() {
       });
       setQuotaList(data || []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch quotas failed:', err);
+      message.error((err as Error)?.message || '加载额度列表失败');
+      setQuotaList([]);
     } finally {
       setQuotaLoading(false);
     }
@@ -202,8 +202,7 @@ export default function BillingPage() {
       setCreateOpen(false);
       fetchQuotas();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('create quota failed:', err);
+      message.error((err as Error)?.message || '创建额度失败');
     }
   };
 
@@ -239,8 +238,7 @@ export default function BillingPage() {
       setEditOpen(false);
       fetchQuotas();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('update quota failed:', err);
+      message.error((err as Error)?.message || '保存失败');
     }
   };
 
@@ -251,8 +249,7 @@ export default function BillingPage() {
       message.success(checked ? '已启用' : '已停用');
       fetchQuotas();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('toggle quota failed:', err);
+      message.error((err as Error)?.message || '状态更新失败');
     }
   };
 
@@ -262,8 +259,7 @@ export default function BillingPage() {
       message.success('已删除');
       fetchQuotas();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete quota failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 
@@ -392,8 +388,8 @@ export default function BillingPage() {
       });
       setDailyList(data || []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch daily billing failed:', err);
+      message.error((err as Error)?.message || '加载用量统计失败');
+      setDailyList([]);
     } finally {
       setDailyLoading(false);
     }

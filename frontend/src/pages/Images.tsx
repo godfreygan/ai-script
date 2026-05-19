@@ -78,21 +78,21 @@ export default function ImagesPage() {
         projectApi.list({ page_size: 200 }),
         modelApi.list({ page_size: 200, type: 'image', enabled: 1 }),
       ]);
-      setProjects(p.list);
-      setModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setProjects(p?.list ?? []);
+      setModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch image refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
   const fetchStyles = async (pid?: number) => {
     try {
       const data = await styleApi.list(pid);
-      setStyles(data);
+      // 防护: data 为 undefined 时避免炸
+      setStyles(data ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch styles failed:', err);
+      message.error((err as Error)?.message || '加载风格列表失败');
       setStyles([]);
     }
   };
@@ -106,11 +106,11 @@ export default function ImagesPage() {
         project_id: projectId,
         storyboard_id: storyboardId,
       });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch images failed:', err);
+      message.error((err as Error)?.message || '加载图片列表失败');
       setList([]);
       setTotal(0);
     } finally {
@@ -155,11 +155,10 @@ export default function ImagesPage() {
         storyboard_id: v.storyboard_id,
         style_id: v.style_id,
       });
-      setGenTopic(r.topic);
-      message.success(`已入队任务 ${r.task_id}`);
+      setGenTopic(r?.topic ?? null);
+      message.success(`已入队任务 ${r?.task_id}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('generate image failed:', err);
+      message.error((err as Error)?.message || '生成失败');
     }
   };
 
@@ -169,8 +168,7 @@ export default function ImagesPage() {
       message.success('已删除');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete image failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 

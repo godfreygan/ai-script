@@ -70,6 +70,19 @@ func getVideoCircuitBreaker(endpoint string) *circuitbreaker.CircuitBreaker {
 //   - https://api.pika.art
 //
 // 若 endpoint 已含 /v1 路径,则直接使用;否则自动补 /v1。
+func newVideoHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 5 * time.Minute,
+		Transport: &http.Transport{
+			MaxConnsPerHost:     20,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+}
+
 func NewVideoAdapter(code, baseURL, apiKey, modelName string) *VideoAdapter {
 	ep := strings.TrimRight(baseURL, "/")
 	return &VideoAdapter{
@@ -77,7 +90,7 @@ func NewVideoAdapter(code, baseURL, apiKey, modelName string) *VideoAdapter {
 		baseURL:   ep,
 		apiKey:    apiKey,
 		modelName: modelName,
-		client:    &http.Client{Timeout: 5 * time.Minute},
+		client:    newVideoHTTPClient(),
 		cb:        getVideoCircuitBreaker(ep),
 	}
 }
@@ -364,6 +377,7 @@ func (a *VideoAdapter) Healthcheck(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body) // 排空 Body 以复用 TCP 连接
 
 	if resp.StatusCode/100 == 2 {
 		return nil
@@ -380,6 +394,7 @@ func (a *VideoAdapter) Healthcheck(ctx context.Context) error {
 		return err
 	}
 	defer resp2.Body.Close()
+	_, _ = io.Copy(io.Discard, resp2.Body) // 排空 Body 以复用 TCP 连接
 	if resp2.StatusCode/100 != 2 {
 		return fmt.Errorf("unhealthy: HTTP %d", resp2.StatusCode)
 	}

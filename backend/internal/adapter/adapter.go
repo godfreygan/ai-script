@@ -10,9 +10,13 @@ import (
 type ModelType string
 
 const (
-	TypeText  ModelType = "text"
+	// TypeText 文本模型(对话/补全)
+	TypeText ModelType = "text"
+	// TypeImage 图像生成模型
 	TypeImage ModelType = "image"
+	// TypeVideo 视频生成模型
 	TypeVideo ModelType = "video"
+	// TypeAudio 音频/TTS 模型
 	TypeAudio ModelType = "audio"
 )
 

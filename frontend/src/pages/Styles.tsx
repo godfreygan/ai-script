@@ -56,10 +56,10 @@ export default function StylesPage() {
   const fetchProjects = async () => {
     try {
       const p = await projectApi.list({ page_size: 200 });
-      setProjects(p.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setProjects(p?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch projects for styles failed:', err);
+      message.error((err as Error)?.message || '加载项目列表失败');
     }
   };
 
@@ -67,10 +67,10 @@ export default function StylesPage() {
     setLoading(true);
     try {
       const data = await styleApi.list(projectId);
-      setList(data);
+      // 防护: 接口返回 undefined 时避免炸
+      setList(data ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch styles failed:', err);
+      message.error((err as Error)?.message || '加载风格列表失败');
       setList([]);
     } finally {
       setLoading(false);
@@ -147,8 +147,7 @@ export default function StylesPage() {
       setEditOpen(false);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('save style failed:', err);
+      message.error((err as Error)?.message || '保存失败');
     }
   };
 
@@ -158,8 +157,7 @@ export default function StylesPage() {
       message.success('已删除');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete style failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 

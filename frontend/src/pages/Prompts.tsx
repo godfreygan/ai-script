@@ -68,21 +68,21 @@ export default function PromptsPage() {
         scriptApi.list({ page_size: 200 }),
         modelApi.list({ page_size: 200, type: 'text', enabled: 1 }),
       ]);
-      setScripts(s.list);
-      setModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setScripts(s?.list ?? []);
+      setModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch prompt refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
   const fetchEpisodesForScript = async (sid: number) => {
     try {
       const eps = await scriptApi.episodes(sid);
-      setEpisodes(eps);
+      // 防护: 接口返回 undefined 时避免炸
+      setEpisodes(eps ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch episodes failed:', err);
+      message.error((err as Error)?.message || '加载分集失败');
       setEpisodes([]);
     }
   };
@@ -94,11 +94,11 @@ export default function PromptsPage() {
         promptApi.listByEpisode(eid),
         promptApi.getCurrent(eid),
       ]);
-      setPrompts(ps);
+      // 防护: 接口返回 undefined 时避免炸
+      setPrompts(ps ?? []);
       setCurrent(cur ?? null);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch prompts failed:', err);
+      message.error((err as Error)?.message || '加载提示词失败');
       setPrompts([]);
       setCurrent(null);
     } finally {
@@ -116,14 +116,19 @@ export default function PromptsPage() {
     if (urlEp > 0 && scripts.length > 0 && !scriptId) {
       // 加载所有 script 的分集太费,直接默认拉第一个能含该 episode 的 script
       (async () => {
-        for (const sc of scripts) {
-          const eps = await scriptApi.episodes(sc.id);
-          if (eps.find((e) => e.id === urlEp)) {
-            setScriptId(sc.id);
-            setEpisodes(eps);
-            setEpisodeId(urlEp);
-            return;
+        try {
+          for (const sc of scripts) {
+            const eps = await scriptApi.episodes(sc.id);
+            if (eps?.find((e) => e.id === urlEp)) {
+              setScriptId(sc.id);
+              setEpisodes(eps);
+              setEpisodeId(urlEp);
+              return;
+            }
           }
+        } catch (err) {
+          // URL 反向查找失败静默处理,不影响主流程
+          message.error((err as Error)?.message || '反向查找分集失败');
         }
       })();
     }
@@ -170,11 +175,10 @@ export default function PromptsPage() {
     const v = await genForm.validateFields();
     try {
       const r = await promptApi.generate(episodeId, v);
-      setGenTopic(r.topic);
-      message.success(`已入队任务 ${r.task_id}`);
+      setGenTopic(r?.topic ?? null);
+      message.success(`已入队任务 ${r?.task_id}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('generate prompt failed:', err);
+      message.error((err as Error)?.message || '生成失败');
     }
   };
 
@@ -185,8 +189,7 @@ export default function PromptsPage() {
       message.success('已设为当前版本');
       fetchPrompts(episodeId);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('set current prompt failed:', err);
+      message.error((err as Error)?.message || '设置当前版本失败');
     }
   };
 

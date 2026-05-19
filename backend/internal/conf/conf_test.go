@@ -14,7 +14,9 @@ func TestBuildMySQLDSNFromEnv(t *testing.T) {
 	t.Setenv("MYSQL_HOST", "127.0.0.1")
 	t.Setenv("MYSQL_PORT", "3306")
 	t.Setenv("MYSQL_DATABASE", "ai_script")
-	t.Setenv("MYSQL_PARAMS", "charset=utf8mb4&parseTime=True&loc=Local")
+	t.Setenv("MYSQL_CHARSET", "utf8mb4")
+	t.Setenv("MYSQL_PARSE_TIME", "true")
+	t.Setenv("MYSQL_MULTI_STATEMENTS", "false")
 
 	dsn := buildMySQLDSNFromEnv()
 	if dsn == "" {
@@ -22,6 +24,34 @@ func TestBuildMySQLDSNFromEnv(t *testing.T) {
 	}
 	if want := "ai_script:secret@tcp(127.0.0.1:3306)/ai_script"; dsn[:len(want)] != want {
 		t.Fatalf("DSN prefix = %q, want prefix %q", dsn, want)
+	}
+}
+
+func TestBuildMySQLDSNFromEnv_UsesDefaults(t *testing.T) {
+	t.Setenv("MYSQL_USER", "ai_script")
+	t.Setenv("MYSQL_PASSWORD", "secret")
+	t.Setenv("MYSQL_DATABASE", "")
+	t.Setenv("MYSQL_HOST", "")
+	t.Setenv("MYSQL_PORT", "")
+	t.Setenv("MYSQL_CHARSET", "")
+	t.Setenv("MYSQL_PARSE_TIME", "")
+	t.Setenv("MYSQL_MULTI_STATEMENTS", "")
+
+	dsn := buildMySQLDSNFromEnv()
+	if !contains(dsn, "ai_script:secret@tcp(127.0.0.1:3306)/ai_script") {
+		t.Fatalf("dsn = %q", dsn)
+	}
+	if !contains(dsn, "charset=utf8mb4") {
+		t.Fatalf("dsn missing default charset: %q", dsn)
+	}
+	if !contains(dsn, "parseTime=true") {
+		t.Fatalf("dsn missing default parseTime: %q", dsn)
+	}
+	if !contains(dsn, "loc=Local") {
+		t.Fatalf("dsn missing default loc: %q", dsn)
+	}
+	if !contains(dsn, "multiStatements=false") {
+		t.Fatalf("dsn missing default multiStatements: %q", dsn)
 	}
 }
 
@@ -71,23 +101,20 @@ func TestLoad_FromEnv(t *testing.T) {
 	}
 }
 
-func TestApplyEnvDerivedConfig_OverridesStaleMYSQL_DSN(t *testing.T) {
+func TestApplyEnvDerivedConfig_RebuildsFromSplitEnv(t *testing.T) {
 	t.Setenv("MYSQL_USER", "ai_script")
 	t.Setenv("MYSQL_PASSWORD", "newpass")
 	t.Setenv("MYSQL_HOST", "mysql")
 	t.Setenv("MYSQL_PORT", "3306")
 	t.Setenv("MYSQL_DATABASE", "ai_script")
-	t.Setenv("MYSQL_DSN", "wrong:wrong@tcp(127.0.0.1:3306)/ai_script")
 	t.Setenv("REDIS_HOST", "redis")
 	t.Setenv("REDIS_PORT", "6379")
 
 	var c Config
-	c.MySQL.DSN = "wrong:wrong@tcp(127.0.0.1:3306)/ai_script"
-	c.Redis.Addr = "127.0.0.1:6379"
 	applyEnvDerivedConfig(&c)
 
-	if c.MySQL.DSN == "" || c.MySQL.DSN == "wrong:wrong@tcp(127.0.0.1:3306)/ai_script" {
-		t.Fatalf("expected DSN rebuilt from MYSQL_USER, got %q", c.MySQL.DSN)
+	if c.MySQL.DSN == "" {
+		t.Fatalf("expected DSN rebuilt from MYSQL_USER, got empty")
 	}
 	if c.Redis.Addr != "redis:6379" {
 		t.Fatalf("redis addr = %q, want redis:6379", c.Redis.Addr)

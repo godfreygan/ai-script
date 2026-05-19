@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  App as AntApp,
   Card,
   Col,
   DatePicker,
@@ -43,6 +44,7 @@ const statusColor: Record<string, string> = {
 };
 
 export default function InvocationsPage() {
+  const { message } = AntApp.useApp();
   const [projects, setProjects] = useState<Project[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -71,12 +73,12 @@ export default function InvocationsPage() {
         modelApi.list({ page_size: 200 }),
         userApi.list({ page_size: 200 }),
       ]);
-      setProjects(p.list);
-      setModels(m.list);
-      setUsers(u.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setProjects(p?.list ?? []);
+      setModels(m?.list ?? []);
+      setUsers(u?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch invocation refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
@@ -104,11 +106,11 @@ export default function InvocationsPage() {
         page,
         page_size: pageSize,
       });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch invocations failed:', err);
+      message.error((err as Error)?.message || '加载调用日志失败');
       setList([]);
       setTotal(0);
     } finally {
@@ -119,10 +121,9 @@ export default function InvocationsPage() {
   const fetchStats = async () => {
     try {
       const s = await invocationApi.stats(buildQuery());
-      setStats(s);
+      setStats(s ?? null);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch invocation stats failed:', err);
+      message.error((err as Error)?.message || '加载统计失败');
       setStats(null);
     }
   };

@@ -194,7 +194,7 @@ func TestValidate_ValidPathID(t *testing.T) {
 	c.Request, _ = http.NewRequest("GET", "/test/123", nil)
 	c.Params = gin.Params{{Key: "id", Value: "123"}}
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.NotEqual(t, http.StatusBadRequest, w.Code)
@@ -207,7 +207,7 @@ func TestValidate_InvalidPathID(t *testing.T) {
 	c.Request, _ = http.NewRequest("GET", "/test/abc", nil)
 	c.Params = gin.Params{{Key: "id", Value: "abc"}}
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -220,7 +220,7 @@ func TestValidate_InvalidPathUID(t *testing.T) {
 	c.Request, _ = http.NewRequest("GET", "/test", nil)
 	c.Params = gin.Params{{Key: "uid", Value: "-1"}}
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -232,7 +232,7 @@ func TestValidate_InvalidPage(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request, _ = http.NewRequest("GET", "/test?page=0", nil)
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -244,7 +244,7 @@ func TestValidate_InvalidSize(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request, _ = http.NewRequest("GET", "/test?size=1001", nil)
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -258,7 +258,7 @@ func TestValidate_InvalidContentType(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "text/plain")
 	c.Request.ContentLength = 7
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -272,7 +272,7 @@ func TestValidate_ValidContentType(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.ContentLength = 7
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.NotEqual(t, http.StatusBadRequest, w.Code)
@@ -286,7 +286,7 @@ func TestValidate_MultipartFormData(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "multipart/form-data; boundary=boundary")
 	c.Request.ContentLength = 10
 
-	handler := Validate()
+	handler := Validate(zap.NewNop())
 	handler(c)
 
 	assert.NotEqual(t, http.StatusBadRequest, w.Code)

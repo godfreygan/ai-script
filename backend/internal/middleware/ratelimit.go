@@ -12,6 +12,7 @@ import (
 	"github.com/godfreygan/ai-script/backend/pkg/response"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 // redisOpCtx 限流计数释放不得绑定请求 ctx：客户端超时/断连会取消 ctx，导致 DECR 失败、并发计数泄漏。
@@ -22,7 +23,7 @@ func redisOpCtx() context.Context {
 // RateLimit 基于 Redis 令牌桶的按用户限流中间件。
 // 速率: 每分钟 2 个令牌, 桶容量(burst): 5。
 // 超限返回 HTTP 429。
-func RateLimit(rdb *redis.Client) gin.HandlerFunc {
+func RateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 	const (
 		ratePerMin = 2
 		burst      = 5
@@ -64,6 +65,10 @@ func RateLimit(rdb *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uidVal, exists := c.Get("uid")
 		if !exists {
+			log.Warn("rate limit rejected: no uid in context",
+				zap.String("rid", c.GetString("request_id")),
+				zap.String("path", c.Request.URL.Path),
+			)
 			response.Fail(c, errcode.ErrUnauthorized)
 			c.Abort()
 			return
@@ -80,11 +85,21 @@ func RateLimit(rdb *redis.Client) gin.HandlerFunc {
 			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
 				uid = parsed
 			} else {
+				log.Warn("rate limit rejected: invalid uid type",
+					zap.String("rid", c.GetString("request_id")),
+					zap.String("path", c.Request.URL.Path),
+					zap.Any("uid_val", uidVal),
+				)
 				response.Fail(c, errcode.ErrUnauthorized)
 				c.Abort()
 				return
 			}
 		default:
+			log.Warn("rate limit rejected: unknown uid type",
+				zap.String("rid", c.GetString("request_id")),
+				zap.String("path", c.Request.URL.Path),
+				zap.Any("uid_val", uidVal),
+			)
 			response.Fail(c, errcode.ErrUnauthorized)
 			c.Abort()
 			return
@@ -101,10 +116,20 @@ func RateLimit(rdb *redis.Client) gin.HandlerFunc {
 		).Int()
 
 		if err != nil {
+			log.Warn("rate limit check failed: redis error",
+				zap.String("rid", c.GetString("request_id")),
+				zap.Int64("uid", uid),
+				zap.Error(err),
+			)
 			c.Next()
 			return
 		}
 		if allowed == 0 {
+			log.Warn("rate limit rejected: user quota exceeded",
+				zap.String("rid", c.GetString("request_id")),
+				zap.Int64("uid", uid),
+				zap.String("path", c.Request.URL.Path),
+			)
 			response.Fail(c, errcode.ErrRateLimit)
 			c.Abort()
 			return
@@ -146,7 +171,7 @@ func clientIP(c *gin.Context) string {
 // IPRateLimit 基于客户端 IP 的限流中间件（令牌桶）。
 // 默认速率: 100 请求/分钟, burst: 150。
 // 超限返回 HTTP 429。
-func IPRateLimit(rdb *redis.Client) gin.HandlerFunc {
+func IPRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 	const (
 		ratePerMin = 100
 		burst      = 150
@@ -201,11 +226,21 @@ func IPRateLimit(rdb *redis.Client) gin.HandlerFunc {
 		).Int()
 
 		if err != nil {
+			log.Warn("ip rate limit check failed: redis error",
+				zap.String("rid", c.GetString("request_id")),
+				zap.String("ip", ip),
+				zap.Error(err),
+			)
 			// Redis 不可用时 fail-open，避免整站不可用
 			c.Next()
 			return
 		}
 		if allowed == 0 {
+			log.Warn("ip rate limit rejected: quota exceeded",
+				zap.String("rid", c.GetString("request_id")),
+				zap.String("ip", ip),
+				zap.String("path", c.Request.URL.Path),
+			)
 			response.Fail(c, errcode.ErrRateLimit.WithMsg("IP 请求过于频繁，请稍后再试"))
 			c.Abort()
 			return
@@ -218,7 +253,7 @@ func IPRateLimit(rdb *redis.Client) gin.HandlerFunc {
 // 使用 Redis INCR + EXPIRE 实现滑动窗口计数器，控制最大并发请求数。
 // 默认最大并发: 1000。
 // 超限返回 HTTP 429。
-func GlobalRateLimit(rdb *redis.Client) gin.HandlerFunc {
+func GlobalRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 	const (
 		maxConcurrent = 1000
 		windowSec     = 60
@@ -261,10 +296,19 @@ func GlobalRateLimit(rdb *redis.Client) gin.HandlerFunc {
 		).Int()
 
 		if err != nil {
+			log.Warn("global rate limit check failed: redis error",
+				zap.String("rid", c.GetString("request_id")),
+				zap.Error(err),
+			)
 			c.Next()
 			return
 		}
 		if count > maxConcurrent {
+			log.Warn("global rate limit rejected: concurrent quota exceeded",
+				zap.String("rid", c.GetString("request_id")),
+				zap.Int("current_concurrent", count),
+				zap.String("path", c.Request.URL.Path),
+			)
 			_ = releaseScript.Run(redisOpCtx(), rdb, []string{key}).Err()
 			response.Fail(c, errcode.ErrRateLimit.WithMsg("服务器繁忙，请稍后再试"))
 			c.Abort()

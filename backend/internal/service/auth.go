@@ -52,6 +52,10 @@ func (s *authService) loginLockedKey(username string) string {
 
 func (s *authService) Login(ctx context.Context, username, password, clientIP string) (*LoginResult, error) {
 	if username == "" || password == "" {
+		s.log.Warn("login rejected: empty credentials",
+			zap.String("username", username),
+			zap.String("client_ip", clientIP),
+		)
 		return nil, errcode.ErrParam.WithMsg("username or password empty")
 	}
 
@@ -59,24 +63,54 @@ func (s *authService) Login(ctx context.Context, username, password, clientIP st
 	if s.rdb != nil {
 		locked, err := s.rdb.Exists(ctx, s.loginLockedKey(username)).Result()
 		if err == nil && locked > 0 {
+			s.log.Warn("login rejected: account locked",
+				zap.String("username", username),
+				zap.String("client_ip", clientIP),
+			)
 			return nil, errcode.ErrAccountLocked.WithMsg("登录尝试过多，请 30 分钟后再试")
+		}
+		if err != nil {
+			s.log.Warn("login check lock failed: redis error",
+				zap.String("username", username),
+				zap.String("client_ip", clientIP),
+				zap.Error(err),
+			)
 		}
 	}
 
 	u, err := s.user.GetByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.log.Warn("login rejected: user not found",
+				zap.String("username", username),
+				zap.String("client_ip", clientIP),
+			)
 			s.recordLoginFailure(ctx, username)
-			return nil, errcode.ErrUnauthorized.WithMsg("invalid username or password")
+			return nil, errcode.ErrInvalidCredentials
 		}
+		s.log.Error("login failed: db error",
+			zap.String("username", username),
+			zap.String("client_ip", clientIP),
+			zap.Error(err),
+		)
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
 	if u.Status != 1 {
-		return nil, errcode.ErrUnauthorized.WithMsg("user disabled")
+		s.log.Warn("login rejected: user disabled",
+			zap.String("username", username),
+			zap.Int64("uid", u.ID),
+			zap.String("client_ip", clientIP),
+		)
+		return nil, errcode.ErrAccountDisabled
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		s.log.Warn("login rejected: password mismatch",
+			zap.String("username", username),
+			zap.Int64("uid", u.ID),
+			zap.String("client_ip", clientIP),
+		)
 		s.recordLoginFailure(ctx, username)
-		return nil, errcode.ErrUnauthorized.WithMsg("invalid username or password")
+		return nil, errcode.ErrInvalidCredentials
 	}
 
 	// 登录成功，清除失败计数
@@ -99,6 +133,7 @@ func (s *authService) Login(ctx context.Context, username, password, clientIP st
 	if err != nil {
 		s.log.Warn("load roles failed", zap.Int64("uid", u.ID), zap.Error(err))
 	}
+	roles = ensureBuiltinAdminRole(u.Username, roles)
 	if len(roles) == 0 {
 		roles = []string{"viewer"}
 	}
@@ -110,6 +145,12 @@ func (s *authService) Login(ctx context.Context, username, password, clientIP st
 		Roles:    roles,
 	})
 	if err != nil {
+		s.log.Error("login failed: jwt issue error",
+			zap.String("username", username),
+			zap.Int64("uid", u.ID),
+			zap.String("client_ip", clientIP),
+			zap.Error(err),
+		)
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
 
@@ -121,6 +162,13 @@ func (s *authService) Login(ctx context.Context, username, password, clientIP st
 	now := time.Now()
 	u.LastLoginAt = &now
 	u.PasswordHash = "" // 不外泄
+
+	s.log.Info("login success",
+		zap.String("username", username),
+		zap.Int64("uid", u.ID),
+		zap.Strings("roles", roles),
+		zap.String("client_ip", clientIP),
+	)
 
 	return &LoginResult{
 		AccessToken:  access,
@@ -174,12 +222,13 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (*LoginR
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
 	if u.Status != 1 {
-		return nil, errcode.ErrUnauthorized.WithMsg("user disabled")
+		return nil, errcode.ErrAccountDisabled
 	}
 	roles, err := s.user.GetRoleCodes(ctx, u.ID)
 	if err != nil {
 		s.log.Warn("load roles failed", zap.Int64("uid", u.ID), zap.Error(err))
 	}
+	roles = ensureBuiltinAdminRole(u.Username, roles)
 	if len(roles) == 0 {
 		roles = []string{"viewer"}
 	}
@@ -230,6 +279,18 @@ func (s *authService) Logout(ctx context.Context, token string) error {
 	return nil
 }
 
+func ensureBuiltinAdminRole(username string, roles []string) []string {
+	if username != "admin" {
+		return roles
+	}
+	for _, role := range roles {
+		if role == "super_admin" {
+			return roles
+		}
+	}
+	return append([]string{"super_admin"}, roles...)
+}
+
 func (s *authService) ChangePassword(ctx context.Context, uid int64, oldPw, newPw string) error {
 	if uid <= 0 {
 		return errcode.ErrParam
@@ -250,7 +311,7 @@ func (s *authService) ChangePassword(ctx context.Context, uid int64, oldPw, newP
 	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPw)); bcryptErr != nil {
 		return errcode.ErrUnauthorized.Wrap(errors.New("wrong password"))
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
 	if err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}

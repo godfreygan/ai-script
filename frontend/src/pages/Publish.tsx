@@ -152,11 +152,13 @@ export default function PublishPage() {
         page_size: pageSize,
         status: statusFilter,
       });
-      setList(data.list || []);
-      setTotal(data.total || 0);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch publish list failed:', err);
+      message.error((err as Error)?.message || '加载发布列表失败');
+      setList([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -170,10 +172,10 @@ export default function PublishPage() {
         page_size: 200,
         status: 'succeeded',
       });
-      setFullVideoOptions(data.list || []);
+      // 防护: data 为 undefined 时避免炸
+      setFullVideoOptions(data?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch full videos for publish failed:', err);
+      message.error((err as Error)?.message || '加载完整视频列表失败');
     } finally {
       setFvLoading(false);
     }
@@ -217,8 +219,7 @@ export default function PublishPage() {
       setPublishOpen(false);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('publish failed:', err);
+      message.error((err as Error)?.message || '发布失败');
     }
   };
 
@@ -229,8 +230,7 @@ export default function PublishPage() {
       message.success('已下架');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('unpublish failed:', err);
+      message.error((err as Error)?.message || '下架失败');
     }
   };
 
@@ -244,8 +244,7 @@ export default function PublishPage() {
       message.success('已重新发布');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('republish failed:', err);
+      message.error((err as Error)?.message || '重新发布失败');
     }
   };
 
@@ -279,8 +278,7 @@ export default function PublishPage() {
       setWmOpen(false);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('update watermark failed:', err);
+      message.error((err as Error)?.message || '更新水印失败');
     }
   };
 
@@ -292,14 +290,13 @@ export default function PublishPage() {
     setPreviewLoading(true);
     try {
       const fv = await fullVideoApi.get(item.full_video_id);
-      setPreviewVideo(fv);
+      setPreviewVideo(fv ?? null);
       // 预览即视为播放,计数 +1(失败忽略)
       publishApi.incPlay(item.full_video_id).catch(() => {
         /* ignore */
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch full video for preview failed:', err);
+      message.error((err as Error)?.message || '加载视频预览失败');
     } finally {
       setPreviewLoading(false);
     }
@@ -312,8 +309,7 @@ export default function PublishPage() {
       message.success('已记录下载');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('inc download failed:', err);
+      message.error((err as Error)?.message || '记录下载失败');
     }
   };
 

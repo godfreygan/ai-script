@@ -1,4 +1,3 @@
-// InvocationService 调用日志(model_invocations)聚合与查询。
 package service
 
 import (
@@ -11,31 +10,32 @@ import (
 	"go.uber.org/zap"
 )
 
+// invocationService handles model invocation logging and queries.
 type invocationService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
 
-// LogParams 写入调用日志的入参,用于 worker / handler 在调用模型成功或失败后记录
+// LogParams captures one invocation event.
 type LogParams struct {
 	ModelID      int64
 	UserID       int64
 	DeptID       int64
 	ProjectID    int64
-	BizType      string // script_split / prompt_gen / image_gen / video_gen / tts ...
-	BizRef       string // 如 episode:123 / image:42
+	BizType      string
+	BizRef       string
 	InputTokens  int
 	OutputTokens int
-	Units        int // 图像张数 / 视频秒数 等
+	Units        int
 	DurationMs   int
 	Cost         float64
-	Status       string // succeeded / failed
+	Status       string
 	ErrorCode    string
 	StartedAt    time.Time
 	EndedAt      *time.Time
 }
 
-// Log 写入一条调用日志。任何错误只记录日志,不阻塞主流程。
+// Log writes one invocation record and never blocks the main flow on failure.
 func (s *invocationService) Log(ctx context.Context, p *LogParams) {
 	if s == nil || s.r == nil {
 		return
@@ -68,7 +68,7 @@ func (s *invocationService) Log(ctx context.Context, p *LogParams) {
 	}
 }
 
-// List 调用日志分页列表
+// List returns invocation records.
 func (s *invocationService) List(ctx context.Context, q *repo.ListInvocationsQuery) ([]model.ModelInvocation, int64, error) {
 	list, total, err := s.r.Invocation.List(ctx, q)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *invocationService) List(ctx context.Context, q *repo.ListInvocationsQue
 	return list, total, nil
 }
 
-// Stats 调用日志聚合统计
+// Stats returns aggregated invocation metrics.
 func (s *invocationService) Stats(ctx context.Context, q *repo.ListInvocationsQuery) (*repo.InvocationStats, error) {
 	stats, err := s.r.Invocation.StatsAll(ctx, q)
 	if err != nil {

@@ -99,11 +99,11 @@ export default function AuditLogsPage() {
         resource_type: filters.resource_type,
         action: filters.action,
       });
-      setList(data.list || []);
-      setTotal(data.total || 0);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch audit list failed:', err);
+      message.error((err as Error)?.message || '加载审计日志失败');
       setList([]);
       setTotal(0);
     } finally {

@@ -12,7 +12,7 @@ func main() {
 	if len(os.Args) > 1 {
 		pw = os.Args[1]
 	}
-	h, err := bcrypt.GenerateFromPassword([]byte(pw), 10)
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
 		panic(err)
 	}

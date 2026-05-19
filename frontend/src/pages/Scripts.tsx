@@ -90,11 +90,13 @@ export default function ScriptsPage() {
         project_id: projectId,
         status: statusFilter,
       });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch scripts failed:', err);
+      message.error((err as Error)?.message || '加载剧本列表失败');
+      setList([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -106,11 +108,11 @@ export default function ScriptsPage() {
         projectApi.list({ page_size: 200 }),
         modelApi.list({ page_size: 200, type: 'text', enabled: 1 }),
       ]);
-      setProjects(p.list);
-      setModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setProjects(p?.list ?? []);
+      setModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch script refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
@@ -154,8 +156,7 @@ export default function ScriptsPage() {
       createForm.resetFields();
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('create script failed:', err);
+      message.error((err as Error)?.message || '创建失败');
     }
   };
 
@@ -165,8 +166,7 @@ export default function ScriptsPage() {
       message.success('已删除');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete script failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 
@@ -192,11 +192,10 @@ export default function ScriptsPage() {
     const v = await splitForm.validateFields();
     try {
       const r = await scriptApi.split(splitTarget.id, v);
-      setSplitTopic(r.topic);
-      message.success(`已入队任务 ${r.task_id}`);
+      setSplitTopic(r?.topic ?? null);
+      message.success(`已入队任务 ${r?.task_id}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('split script failed:', err);
+      message.error((err as Error)?.message || '拆分失败');
     }
   };
 
@@ -206,10 +205,10 @@ export default function ScriptsPage() {
     setEpisodeLoading(true);
     try {
       const eps = await scriptApi.episodes(sc.id);
-      setEpisodes(eps);
+      // 防护: 接口返回 undefined 时避免炸
+      setEpisodes(eps ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch episodes failed:', err);
+      message.error((err as Error)?.message || '加载分集失败');
       setEpisodes([]);
     } finally {
       setEpisodeLoading(false);

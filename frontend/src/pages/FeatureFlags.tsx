@@ -75,8 +75,7 @@ export default function FeatureFlagsPage() {
       const data = await featureFlagApi.list();
       setList(data || []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch feature flags failed:', err);
+      message.error((err as Error)?.message || '加载灰度开关失败');
       setList([]);
     } finally {
       setLoading(false);
@@ -152,8 +151,7 @@ export default function FeatureFlagsPage() {
       setEditOpen(false);
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('save feature flag failed:', err);
+      message.error((err as Error)?.message || '保存失败');
     }
   };
 
@@ -163,8 +161,7 @@ export default function FeatureFlagsPage() {
       message.success('已删除');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete feature flag failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 
@@ -174,8 +171,7 @@ export default function FeatureFlagsPage() {
       message.success(enabled ? '已启用' : '已禁用');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('toggle feature flag failed:', err);
+      message.error((err as Error)?.message || '状态更新失败');
     }
   };
 
@@ -193,10 +189,9 @@ export default function FeatureFlagsPage() {
     setEvalLoading(true);
     try {
       const r = await featureFlagApi.evaluate(evalKey.trim());
-      setEvalResult(r);
+      setEvalResult(r ?? null);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('evaluate feature flag failed:', err);
+      message.error((err as Error)?.message || '评估失败');
       setEvalResult(null);
     } finally {
       setEvalLoading(false);

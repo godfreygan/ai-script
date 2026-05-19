@@ -266,8 +266,9 @@ export default function PipelinesPage() {
     setListLoading(true);
     try {
       const page = await pipelineApi.list({ page: 1, page_size: 200 });
-      setPipelines(page.list || []);
-      if (!selectedId && page.list && page.list.length > 0) {
+      // 防护: 接口返回 undefined 时避免炸
+      setPipelines(page?.list ?? []);
+      if (!selectedId && page?.list && page.list.length > 0) {
         setSelectedId(page.list[0].id);
       }
     } catch (e) {
@@ -281,7 +282,8 @@ export default function PipelinesPage() {
     setModelsLoading(true);
     try {
       const page = await modelApi.list({ page: 1, page_size: 500, enabled: 1 });
-      setModels(page.list || []);
+      // 防护: 接口返回 undefined 时避免炸
+      setModels(page?.list ?? []);
     } catch (e) {
       message.error((e as Error).message || '加载模型列表失败');
     } finally {
@@ -293,8 +295,8 @@ export default function PipelinesPage() {
     refreshList();
     projectApi
       .list({ page: 1, page_size: 100 })
-      .then((p) => setProjects(p.list || []))
-      .catch(() => undefined);
+      .then((p) => setProjects(p?.list ?? []))
+      .catch(() => setProjects([]));
     fetchModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -446,7 +448,7 @@ export default function PipelinesPage() {
       setCreateOpen(false);
       createForm.resetFields();
       await refreshList();
-      setSelectedId(p.id);
+      setSelectedId(p?.id ?? null);
     } catch (e) {
       if ((e as { errorFields?: unknown }).errorFields) return;
       message.error((e as Error).message || '创建失败');
@@ -494,13 +496,19 @@ export default function PipelinesPage() {
         }
       }
       const res = await pipelineApi.run(selectedId, { input });
-      message.success(`已提交,run_id=${res.run_id}`);
+      // 防护: res 为 undefined 时避免炸
+      const runId = res?.run_id;
+      if (!runId) {
+        message.error('运行返回异常,未获取到 run_id');
+        return;
+      }
+      message.success(`已提交,run_id=${runId}`);
       setRunOpen(false);
-      setActiveRunId(Number(res.run_id));
-      setRunTopic(`pipeline:${res.run_id}`);
+      setActiveRunId(Number(runId));
+      setRunTopic(`pipeline:${runId}`);
       setHistoryOpen(true);
       await refreshRuns();
-      await refreshSteps(Number(res.run_id));
+      await refreshSteps(Number(runId));
     } catch (e) {
       if ((e as { errorFields?: unknown }).errorFields) return;
       message.error((e as Error).message || '运行失败');
@@ -513,7 +521,8 @@ export default function PipelinesPage() {
     setRunsLoading(true);
     try {
       const page = await pipelineApi.listRuns(selectedId, { page: 1, page_size: 50 });
-      setRuns(page.list || []);
+      // 防护: 接口返回 undefined 时避免炸
+      setRuns(page?.list ?? []);
     } catch (e) {
       message.error((e as Error).message || '加载运行记录失败');
     } finally {
@@ -529,8 +538,9 @@ export default function PipelinesPage() {
           pipelineApi.getRun(runId),
           pipelineApi.listSteps(runId),
         ]);
-        setActiveRun(run);
-        setActiveSteps(steps || []);
+        setActiveRun(run ?? null);
+        // 防护: steps 为 undefined 时避免炸
+        setActiveSteps(steps ?? []);
       } catch (e) {
         message.error((e as Error).message || '加载步骤失败');
       } finally {

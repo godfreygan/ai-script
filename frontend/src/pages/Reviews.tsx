@@ -121,11 +121,13 @@ export default function ReviewsPage() {
         page_size: pageSize,
         status: statusFilter,
       });
-      setRecords(data.list || []);
-      setRecordsTotal(data.total || 0);
+      // 防护: data 为 undefined 时避免炸
+      setRecords(data?.list ?? []);
+      setRecordsTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch review records failed:', err);
+      message.error((err as Error)?.message || '加载审核记录失败');
+      setRecords([]);
+      setRecordsTotal(0);
     } finally {
       setRecordsLoading(false);
     }
@@ -137,8 +139,8 @@ export default function ReviewsPage() {
       const data = await reviewApi.listFlows();
       setFlows(data || []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch review flows failed:', err);
+      message.error((err as Error)?.message || '加载审核流失败');
+      setFlows([]);
     } finally {
       setFlowsLoading(false);
     }
@@ -150,8 +152,7 @@ export default function ReviewsPage() {
       const nodes = await reviewApi.listNodes(flowId);
       setFlowNodesMap((prev) => ({ ...prev, [flowId]: nodes || [] }));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch flow nodes failed:', err);
+      message.error((err as Error)?.message || '加载审核流节点失败');
     } finally {
       setFlowNodesLoading((prev) => ({ ...prev, [flowId]: false }));
     }
@@ -160,10 +161,11 @@ export default function ReviewsPage() {
   const fetchVideos = async () => {
     try {
       const data = await fullVideoApi.list({ page_size: 200 });
-      setVideos(data.list || []);
+      // 防护: data 为 undefined 时避免炸
+      setVideos(data?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch full videos for review failed:', err);
+      message.error((err as Error)?.message || '加载视频列表失败');
+      setVideos([]);
     }
   };
 
@@ -213,8 +215,7 @@ export default function ReviewsPage() {
       setDrawerActions(actions || []);
       setDrawerFlowNodes(nodes || []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch review drawer data failed:', err);
+      message.error((err as Error)?.message || '加载审核详情失败');
     } finally {
       setDrawerLoading(false);
     }
@@ -228,11 +229,10 @@ export default function ReviewsPage() {
         reviewApi.getRecord(drawerRecord.id),
         reviewApi.listActions(drawerRecord.id),
       ]);
-      setDrawerRecord(rec);
+      setDrawerRecord(rec ?? null);
       setDrawerActions(actions || []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('refresh review drawer failed:', err);
+      message.error((err as Error)?.message || '刷新审核详情失败');
     } finally {
       setDrawerLoading(false);
     }
@@ -252,8 +252,7 @@ export default function ReviewsPage() {
       await refreshDrawer();
       fetchRecords();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('review act failed:', err);
+      message.error((err as Error)?.message || '操作失败');
     } finally {
       setActing(false);
     }
@@ -268,8 +267,7 @@ export default function ReviewsPage() {
       await refreshDrawer();
       fetchRecords();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('review cancel failed:', err);
+      message.error((err as Error)?.message || '撤回失败');
     } finally {
       setActing(false);
     }
@@ -296,8 +294,7 @@ export default function ReviewsPage() {
       setSubmitOpen(false);
       fetchRecords();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('submit review failed:', err);
+      message.error((err as Error)?.message || '提交审核失败');
     } finally {
       setSubmitting(false);
     }

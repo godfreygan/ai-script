@@ -82,11 +82,11 @@ export default function ShortVideosPage() {
         projectApi.list({ page_size: 200 }),
         modelApi.list({ page_size: 200, type: 'video', enabled: 1 }),
       ]);
-      setProjects(p.list);
-      setModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setProjects(p?.list ?? []);
+      setModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch short video refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
@@ -102,10 +102,10 @@ export default function ShortVideosPage() {
         project_id: pid,
         status: 2,
       });
-      setCandidateImages(data.list);
+      // 防护: data 为 undefined 时避免炸
+      setCandidateImages(data?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch candidate images failed:', err);
+      message.error((err as Error)?.message || '加载候选图片失败');
       setCandidateImages([]);
     }
   };
@@ -120,11 +120,11 @@ export default function ShortVideosPage() {
         storyboard_id: storyboardId,
         status: statusFilter,
       });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch short videos failed:', err);
+      message.error((err as Error)?.message || '加载短视频列表失败');
       setList([]);
       setTotal(0);
     } finally {
@@ -174,11 +174,10 @@ export default function ShortVideosPage() {
         storyboard_id: v.storyboard_id,
         source_image_ids: v.source_image_ids,
       });
-      setGenTopic(r.topic);
-      message.success(`已入队任务 ${r.task_id}`);
+      setGenTopic(r?.topic ?? null);
+      message.success(`已入队任务 ${r?.task_id}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('generate short video failed:', err);
+      message.error((err as Error)?.message || '生成失败');
     }
   };
 
@@ -188,8 +187,7 @@ export default function ShortVideosPage() {
       message.success('已删除');
       fetchList();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete short video failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 

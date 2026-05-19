@@ -68,7 +68,7 @@ func main() {
 		fail("load user failed: %v", err)
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(*password), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
 	if err != nil {
 		fail("hash password failed: %v", err)
 	}

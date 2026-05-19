@@ -83,8 +83,8 @@ func TestAuthService_Login(t *testing.T) {
 
 	t.Run("user not found", func(t *testing.T) {
 		_, err := s.Login(ctx, "nobody", "Password123", "")
-		if !isErr(err, errcode.ErrUnauthorized) {
-			t.Fatalf("want ErrUnauthorized, got %v", err)
+		if !isErr(err, errcode.ErrInvalidCredentials) {
+			t.Fatalf("want ErrInvalidCredentials, got %v", err)
 		}
 	})
 
@@ -98,15 +98,15 @@ func TestAuthService_Login(t *testing.T) {
 			t.Fatalf("update status: %v", err)
 		}
 		_, err := s.Login(ctx, "disabled", "Password123", "")
-		if !isErr(err, errcode.ErrUnauthorized) {
-			t.Fatalf("want ErrUnauthorized, got %v", err)
+		if !isErr(err, errcode.ErrAccountDisabled) {
+			t.Fatalf("want ErrAccountDisabled, got %v", err)
 		}
 	})
 
 	t.Run("wrong password", func(t *testing.T) {
 		_, err := s.Login(ctx, "alice", "WrongPass123", "")
-		if !isErr(err, errcode.ErrUnauthorized) {
-			t.Fatalf("want ErrUnauthorized, got %v", err)
+		if !isErr(err, errcode.ErrInvalidCredentials) {
+			t.Fatalf("want ErrInvalidCredentials, got %v", err)
 		}
 	})
 
@@ -122,6 +122,20 @@ func TestAuthService_Login(t *testing.T) {
 		}
 		if len(res.Roles) != 1 || res.Roles[0] != "viewer" {
 			t.Fatalf("roles=%v want [viewer]", res.Roles)
+		}
+	})
+
+	t.Run("builtin admin gets super_admin role", func(t *testing.T) {
+		u5 := &model.User{Username: "admin", PasswordHash: testHash("Password123"), Status: 1}
+		if err := r.User.Create(ctx, u5); err != nil {
+			t.Fatalf("create admin user: %v", err)
+		}
+		res, err := s.Login(ctx, "admin", "Password123", "")
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if len(res.Roles) != 1 || res.Roles[0] != "super_admin" {
+			t.Fatalf("roles=%v want [super_admin]", res.Roles)
 		}
 	})
 
@@ -227,8 +241,8 @@ func TestAuthService_Refresh(t *testing.T) {
 		}
 		_, refresh, _ := s.jwt.Issue(&jwt.Claims{UserID: u2.ID, Username: u2.Username})
 		_, err := s.Refresh(ctx, refresh)
-		if !isErr(err, errcode.ErrUnauthorized) {
-			t.Fatalf("want ErrUnauthorized, got %v", err)
+		if !isErr(err, errcode.ErrAccountDisabled) {
+			t.Fatalf("want ErrAccountDisabled, got %v", err)
 		}
 	})
 
@@ -245,6 +259,21 @@ func TestAuthService_Refresh(t *testing.T) {
 		}
 		if len(res.Roles) != 1 || res.Roles[0] != "viewer" {
 			t.Fatalf("roles=%v want [viewer]", res.Roles)
+		}
+	})
+
+	t.Run("builtin admin keeps super_admin role", func(t *testing.T) {
+		u4 := &model.User{Username: "admin", PasswordHash: testHash("Password123"), Status: 1}
+		if err := r.User.Create(ctx, u4); err != nil {
+			t.Fatalf("create admin user: %v", err)
+		}
+		_, refresh, _ := s.jwt.Issue(&jwt.Claims{UserID: u4.ID, Username: u4.Username})
+		res, err := s.Refresh(ctx, refresh)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if len(res.Roles) != 1 || res.Roles[0] != "super_admin" {
+			t.Fatalf("roles=%v want [super_admin]", res.Roles)
 		}
 	})
 }

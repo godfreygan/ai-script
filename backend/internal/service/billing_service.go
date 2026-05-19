@@ -1,5 +1,3 @@
-// BillingService 配额(BillingQuota)CRUD + 写日聚合(BillingDaily) + 扣减用量。
-// 由 InvocationService.Log 的上层在调用模型成功/失败后调用 Rollup,把单次调用滚到日账并扣减命中的配额。
 package service
 
 import (
@@ -15,38 +13,37 @@ import (
 	"gorm.io/gorm"
 )
 
-// BillingService 计费服务
+// billingService manages quota CRUD and daily usage rollups.
 type billingService struct {
 	r   *repo.Repositories
 	log *zap.Logger
 }
 
-// 允许的枚举值集合
 var (
 	billingScopeTypes = map[string]struct{}{"user": {}, "dept": {}}
 	billingPeriods    = map[string]struct{}{"daily": {}, "monthly": {}, "yearly": {}}
 	billingMetrics    = map[string]struct{}{"calls": {}, "tokens": {}, "units": {}, "cost": {}}
 )
 
-// CreateQuotaInput 创建配额入参
+// CreateQuotaInput creates one quota record.
 type CreateQuotaInput struct {
-	ScopeType  string  `json:"scope_type" binding:"required,oneof=user dept"` // user/dept
+	ScopeType  string  `json:"scope_type" binding:"required,oneof=user dept"`
 	ScopeID    int64   `json:"scope_id" binding:"required,gte=1"`
-	ModelID    int64   `json:"model_id" binding:"gte=0"`                                // 0 = 全部模型
-	Period     string  `json:"period" binding:"omitempty,oneof=daily monthly yearly"`   // monthly/daily/yearly
-	Metric     string  `json:"metric" binding:"required,oneof=calls tokens units cost"` // calls/tokens/units/cost
+	ModelID    int64   `json:"model_id" binding:"gte=0"`
+	Period     string  `json:"period" binding:"omitempty,oneof=daily monthly yearly"`
+	Metric     string  `json:"metric" binding:"required,oneof=calls tokens units cost"`
 	QuotaValue float64 `json:"quota_value" binding:"required,gte=0"`
-	Enabled    *int8   `json:"enabled" binding:"omitempty,gte=0,lte=1"` // 指针,允许显式传 0(禁用)
+	Enabled    *int8   `json:"enabled" binding:"omitempty,gte=0,lte=1"`
 }
 
-// UpdateQuotaInput 更新配额入参(指针字段非 nil 时覆盖)
+// UpdateQuotaInput updates mutable quota fields.
 type UpdateQuotaInput struct {
 	QuotaValue *float64 `json:"quota_value" binding:"omitempty,gte=0"`
 	Enabled    *int8    `json:"enabled" binding:"omitempty,gte=0,lte=1"`
 	Period     *string  `json:"period" binding:"omitempty,oneof=daily monthly yearly"`
 }
 
-// RollupParams Rollup 入参 —— 写日账 + 扣 quota
+// RollupParams describes one usage rollup event.
 type RollupParams struct {
 	Date       time.Time
 	ModelID    int64
@@ -57,11 +54,10 @@ type RollupParams struct {
 	OutputTok  int64
 	Units      int64
 	Cost       float64
-	Metric     string  // 决定扣 quota 时按哪个 metric 算
-	UsageValue float64 // 扣减 quota 的量(如 metric=calls 就是 1,metric=cost 就是 Cost,...)
+	Metric     string
+	UsageValue float64
 }
 
-// validatePeriod 校验 period 枚举
 func validatePeriod(p string) error {
 	if _, ok := billingPeriods[p]; !ok {
 		return errcode.ErrParam.WithMsg(fmt.Sprintf("invalid period: %q", p))
@@ -69,7 +65,6 @@ func validatePeriod(p string) error {
 	return nil
 }
 
-// validateMetric 校验 metric 枚举
 func validateMetric(m string) error {
 	if _, ok := billingMetrics[m]; !ok {
 		return errcode.ErrParam.WithMsg(fmt.Sprintf("invalid metric: %q", m))
@@ -77,7 +72,6 @@ func validateMetric(m string) error {
 	return nil
 }
 
-// validateScopeType 校验 scope_type 枚举
 func validateScopeType(s string) error {
 	if _, ok := billingScopeTypes[s]; !ok {
 		return errcode.ErrParam.WithMsg(fmt.Sprintf("invalid scope_type: %q", s))
@@ -85,12 +79,12 @@ func validateScopeType(s string) error {
 	return nil
 }
 
-// ListQuotas 列出某个 scope(user/dept) 的全部启用配额
+// ListQuotas returns active quotas for one scope.
 func (s *billingService) ListQuotas(ctx context.Context, scopeType string, scopeID int64) ([]model.BillingQuota, error) {
 	return s.r.Billing.ListQuotas(ctx, scopeType, scopeID)
 }
 
-// GetQuota 取单条配额;未找到返回 errcode.ErrNotFound
+// GetQuota returns one quota by id.
 func (s *billingService) GetQuota(ctx context.Context, id int64) (*model.BillingQuota, error) {
 	q, err := s.r.Billing.GetQuota(ctx, id)
 	if err != nil {
@@ -102,7 +96,7 @@ func (s *billingService) GetQuota(ctx context.Context, id int64) (*model.Billing
 	return q, nil
 }
 
-// CreateQuota 新建配额
+// CreateQuota inserts a new quota.
 func (s *billingService) CreateQuota(ctx context.Context, in *CreateQuotaInput) (*model.BillingQuota, error) {
 	if in == nil {
 		return nil, errcode.ErrParam.WithMsg("nil input")
@@ -129,7 +123,7 @@ func (s *billingService) CreateQuota(ctx context.Context, in *CreateQuotaInput) 
 	if err := validatePeriod(period); err != nil {
 		return nil, err
 	}
-	// enabled 默认启用,允许显式传 0 创建禁用配额
+
 	var enabled int8 = 1
 	if in.Enabled != nil {
 		enabled = *in.Enabled
@@ -137,6 +131,7 @@ func (s *billingService) CreateQuota(ctx context.Context, in *CreateQuotaInput) 
 			return nil, errcode.ErrParam.WithMsg("enabled must be 0 or 1")
 		}
 	}
+
 	q := &model.BillingQuota{
 		ScopeType:  in.ScopeType,
 		ScopeID:    in.ScopeID,
@@ -152,7 +147,7 @@ func (s *billingService) CreateQuota(ctx context.Context, in *CreateQuotaInput) 
 	return q, nil
 }
 
-// UpdateQuota 更新配额
+// UpdateQuota updates one quota.
 func (s *billingService) UpdateQuota(ctx context.Context, id int64, in *UpdateQuotaInput) (*model.BillingQuota, error) {
 	if in == nil {
 		return nil, errcode.ErrParam.WithMsg("nil input")
@@ -185,7 +180,7 @@ func (s *billingService) UpdateQuota(ctx context.Context, id int64, in *UpdateQu
 	return q, nil
 }
 
-// DeleteQuota 删除配额
+// DeleteQuota removes one quota.
 func (s *billingService) DeleteQuota(ctx context.Context, id int64) error {
 	if err := s.r.Billing.DeleteQuota(ctx, id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -196,14 +191,9 @@ func (s *billingService) DeleteQuota(ctx context.Context, id int64) error {
 	return nil
 }
 
-// CheckQuota 调用前的额度预检 —— 调用 invocation 前由上层调用。
-// 找到命中的配额,若 used+delta > quota_value 返回 ErrQuotaExceeded;
-// 没有命中配额(nil quota) = 不限制,放行。
+// CheckQuota performs a best-effort quota precheck.
 func (s *billingService) CheckQuota(ctx context.Context, userID, deptID, modelID int64, metric string, delta float64) error {
-	if s == nil || s.r == nil {
-		return nil
-	}
-	if metric == "" {
+	if s == nil || s.r == nil || metric == "" {
 		return nil
 	}
 	if err := validateMetric(metric); err != nil {
@@ -214,7 +204,6 @@ func (s *billingService) CheckQuota(ctx context.Context, userID, deptID, modelID
 		if s.log != nil {
 			s.log.Warn("billing check find active", zap.Error(err))
 		}
-		// 查询失败不阻塞业务,fail-open
 		return nil
 	}
 	if quota == nil {
@@ -226,14 +215,12 @@ func (s *billingService) CheckQuota(ctx context.Context, userID, deptID, modelID
 	return nil
 }
 
-// Rollup 把一次模型调用滚到日账,并扣减命中的配额。
-// best-effort:写日账/扣配额的错误只 Warn 不抛出。
-// 注意:扣减不是严格原子,超用极小概率(高并发同 quota_id 同时扣)需上层用 CheckQuota 做事前拦截。
+// Rollup writes daily usage and increments the matched quota if present.
 func (s *billingService) Rollup(ctx context.Context, p *RollupParams) error {
 	if s == nil || s.r == nil || p == nil {
 		return nil
 	}
-	// 1. 写日聚合 —— StatDate 统一截到当地 0 点,跨月行级天然区分(stat_date 是行键)
+
 	date := p.Date
 	if date.IsZero() {
 		date = time.Now()
@@ -258,34 +245,32 @@ func (s *billingService) Rollup(ctx context.Context, p *RollupParams) error {
 		s.log.Warn("billing upsert daily", zap.Error(err))
 	}
 
-	// 2. 扣 quota —— FindActive 按 user>dept、具体 model>0 排序,一次返回最匹配一条。
-	//    使用 SQL 表达式 used_value+? (在 repo.IncUsed 内) 保证单语句原子,无 read-modify-write race。
-	//    超用兜底:扣减前再做一次软校验(非严格,高并发下仍可能微超,严格控制依赖上层 CheckQuota)。
-	if p.Metric != "" {
-		if _, ok := billingMetrics[p.Metric]; !ok {
-			if s.log != nil {
-				s.log.Warn("billing rollup unknown metric", zap.String("metric", p.Metric))
-			}
-			return nil
+	if p.Metric == "" {
+		return nil
+	}
+	if _, ok := billingMetrics[p.Metric]; !ok {
+		if s.log != nil {
+			s.log.Warn("billing rollup unknown metric", zap.String("metric", p.Metric))
 		}
-		quota, err := s.r.Billing.FindActive(ctx, p.UserID, p.DeptID, p.ModelID, p.Metric)
-		if err != nil {
-			if s.log != nil {
-				s.log.Warn("billing find active quota", zap.Error(err))
-			}
-			return nil
+		return nil
+	}
+
+	quota, err := s.r.Billing.FindActive(ctx, p.UserID, p.DeptID, p.ModelID, p.Metric)
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("billing find active quota", zap.Error(err))
 		}
-		if quota != nil {
-			if err := s.r.Billing.IncUsed(ctx, quota.ID, p.UsageValue); err != nil && s.log != nil {
-				s.log.Warn("billing inc used", zap.Error(err), zap.Int64("quota_id", quota.ID))
-			}
+		return nil
+	}
+	if quota != nil {
+		if err := s.r.Billing.IncUsed(ctx, quota.ID, p.UsageValue); err != nil && s.log != nil {
+			s.log.Warn("billing inc used", zap.Error(err), zap.Int64("quota_id", quota.ID))
 		}
 	}
 	return nil
 }
 
-// ListDaily 按日聚合查询(from/to 日期闭区间;userID/deptID/modelID 为 0 时不过滤该列)
-// from 规范到当天 0 点,to 规范到当天 23:59:59.999999999,确保 BETWEEN 真正包含 to 当天。
+// ListDaily returns daily usage between from and to, inclusive.
 func (s *billingService) ListDaily(ctx context.Context, from, to time.Time, userID, deptID, modelID int64) ([]model.BillingDaily, error) {
 	if from.IsZero() || to.IsZero() {
 		return nil, errcode.ErrParam.WithMsg("from/to required")

@@ -48,12 +48,13 @@ export default function DashboardPage() {
             .list({ page: 1, page_size: 8 })
             .catch(() => ({ total: 0, list: [] as InvocationLog[] })),
         ]);
-        setProjectCount(proj.total || 0);
-        setTodayStats(total);
+        // 防护: 接口返回 undefined 时避免炸
+        setProjectCount(proj?.total ?? 0);
+        setTodayStats(total ?? null);
         setScriptCalls(script?.calls ?? 0);
         setImageCalls(image?.calls ?? 0);
         setVideoCalls(video?.calls ?? 0);
-        setRecent(list.list || []);
+        setRecent(list?.list ?? []);
       } finally {
         setLoading(false);
       }

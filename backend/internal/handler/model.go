@@ -95,6 +95,7 @@ func (h *ModelHandler) Delete(c *gin.Context) {
 	response.OK(c, nil)
 }
 
+// Healthcheck 对指定模型执行连通性探测,返回其是否可用。
 func (h *ModelHandler) Healthcheck(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

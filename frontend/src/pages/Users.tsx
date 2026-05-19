@@ -40,10 +40,13 @@ export default function UsersPage() {
     setLoading(true);
     try {
       const data = await userApi.list({ page, page_size: pageSize, q });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (e) {
       message.error((e as Error)?.message || '加载用户列表失败');
+      setList([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -55,8 +58,8 @@ export default function UsersPage() {
   }, [page, pageSize, q]);
 
   useEffect(() => {
-    deptApi.list().then(setDepts).catch((e) => message.error((e as Error)?.message || '加载部门失败'));
-    roleApi.list().then(setRoles).catch((e) => message.error((e as Error)?.message || '加载角色失败'));
+    deptApi.list().then((d) => setDepts(d ?? [])).catch((e) => message.error((e as Error)?.message || '加载部门失败'));
+    roleApi.list().then((r) => setRoles(r ?? [])).catch((e) => message.error((e as Error)?.message || '加载角色失败'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

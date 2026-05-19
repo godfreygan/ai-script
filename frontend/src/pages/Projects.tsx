@@ -78,10 +78,13 @@ export default function ProjectsPage() {
         q,
         status: statusFilter,
       });
-      setList(data.list);
-      setTotal(data.total);
+      // 防护: data 为 undefined 时避免炸
+      setList(data?.list ?? []);
+      setTotal(data?.total ?? 0);
     } catch (e) {
       message.error((e as Error)?.message || '加载项目列表失败');
+      setList([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -93,10 +96,10 @@ export default function ProjectsPage() {
   }, [page, pageSize, statusFilter, q]);
 
   useEffect(() => {
-    deptApi.list().then(setDepts).catch((e) => message.error((e as Error)?.message || '加载部门失败'));
+    deptApi.list().then((d) => setDepts(d ?? [])).catch((e) => message.error((e as Error)?.message || '加载部门失败'));
     userApi
       .list({ page: 1, page_size: 200 })
-      .then((p) => setUsers(p.list))
+      .then((p) => setUsers(p?.list ?? []))
       .catch((e) => message.error((e as Error)?.message || '加载用户失败'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -179,7 +182,8 @@ export default function ProjectsPage() {
     setMemberLoading(true);
     try {
       const data = await projectApi.listMembers(p.id);
-      setMembers(data);
+      // 防护: data 为 undefined 时避免炸
+      setMembers(data ?? []);
     } catch (e) {
       message.error((e as Error)?.message || '加载成员失败');
     } finally {
@@ -192,7 +196,8 @@ export default function ProjectsPage() {
     setMemberLoading(true);
     try {
       const data = await projectApi.listMembers(memberTarget.id);
-      setMembers(data);
+      // 防护: data 为 undefined 时避免炸
+      setMembers(data ?? []);
     } catch (e) {
       message.error((e as Error)?.message || '刷新成员失败');
     } finally {

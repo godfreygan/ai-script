@@ -112,7 +112,7 @@ func (s *userService) Create(ctx context.Context, in *CreateUserInput) (*model.U
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, errcode.ErrInternal.Wrap(err)
 	}
@@ -207,7 +207,7 @@ func (s *userService) ResetPassword(ctx context.Context, id int64, newPw string)
 	if err := ValidatePassword(newPw, u.Username); err != nil {
 		return err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
 	if err != nil {
 		return errcode.ErrInternal.Wrap(err)
 	}

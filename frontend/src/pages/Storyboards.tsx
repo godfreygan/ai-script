@@ -91,21 +91,21 @@ export default function StoryboardsPage() {
         scriptApi.list({ page_size: 200 }),
         modelApi.list({ page_size: 200, type: 'text', enabled: 1 }),
       ]);
-      setScripts(s.list);
-      setModels(m.list);
+      // 防护: 接口返回 undefined 时避免炸
+      setScripts(s?.list ?? []);
+      setModels(m?.list ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch storyboard refs failed:', err);
+      message.error((err as Error)?.message || '加载参考数据失败');
     }
   };
 
   const fetchEpisodes = async (sid: number) => {
     try {
       const eps = await scriptApi.episodes(sid);
-      setEpisodes(eps);
+      // 防护: 接口返回 undefined 时避免炸
+      setEpisodes(eps ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch episodes failed:', err);
+      message.error((err as Error)?.message || '加载分集失败');
       setEpisodes([]);
     }
   };
@@ -113,10 +113,10 @@ export default function StoryboardsPage() {
   const fetchStyles = async (pid?: number) => {
     try {
       const data = await styleApi.list(pid);
-      setStyles(data);
+      // 防护: 接口返回 undefined 时避免炸
+      setStyles(data ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch styles failed:', err);
+      message.error((err as Error)?.message || '加载风格列表失败');
       setStyles([]);
     }
   };
@@ -125,10 +125,10 @@ export default function StoryboardsPage() {
     setLoading(true);
     try {
       const data = await storyboardApi.listByEpisode(eid);
-      setList(data);
+      // 防护: 接口返回 undefined 时避免炸
+      setList(data ?? []);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('fetch storyboards failed:', err);
+      message.error((err as Error)?.message || '加载分镜列表失败');
       setList([]);
     } finally {
       setLoading(false);
@@ -194,8 +194,7 @@ export default function StoryboardsPage() {
       setEditOpen(false);
       if (episodeId) fetchList(episodeId);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('update storyboard failed:', err);
+      message.error((err as Error)?.message || '保存失败');
     }
   };
 
@@ -205,8 +204,7 @@ export default function StoryboardsPage() {
       message.success('已删除');
       if (episodeId) fetchList(episodeId);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('delete storyboard failed:', err);
+      message.error((err as Error)?.message || '删除失败');
     }
   };
 
@@ -215,11 +213,10 @@ export default function StoryboardsPage() {
     const v = await genForm.validateFields();
     try {
       const r = await storyboardApi.generate(episodeId, v);
-      setGenTopic(r.topic);
-      message.success(`已入队任务 ${r.task_id}`);
+      setGenTopic(r?.topic ?? null);
+      message.success(`已入队任务 ${r?.task_id}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('generate storyboards failed:', err);
+      message.error((err as Error)?.message || '生成失败');
     }
   };
 
@@ -238,8 +235,7 @@ export default function StoryboardsPage() {
       setStyleOpen(false);
       if (episodeId) fetchList(episodeId);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('apply style failed:', err);
+      message.error((err as Error)?.message || '应用风格失败');
     }
   };
 

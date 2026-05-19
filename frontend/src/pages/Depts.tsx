@@ -56,9 +56,11 @@ export default function DeptsPage() {
     setLoading(true);
     try {
       const data = await deptApi.list();
-      setList(data);
+      // 防护: data 为 undefined 时避免炸
+      setList(data ?? []);
     } catch (e) {
       message.error((e as Error)?.message || '加载部门失败');
+      setList([]);
     } finally {
       setLoading(false);
     }
