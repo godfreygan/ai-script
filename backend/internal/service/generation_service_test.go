@@ -110,13 +110,6 @@ func mustCreateProject(t *testing.T, db *gorm.DB, p *model.Project) {
 	}
 }
 
-func mustCreateScript(t *testing.T, db *gorm.DB, s *model.Script) {
-	t.Helper()
-	if err := db.Create(s).Error; err != nil {
-		t.Fatalf("create script: %v", err)
-	}
-}
-
 func mustCreateEpisode(t *testing.T, db *gorm.DB, e *model.Episode) {
 	t.Helper()
 	if err := db.Create(e).Error; err != nil {
@@ -135,13 +128,6 @@ func mustCreateStoryboard(t *testing.T, db *gorm.DB, s *model.Storyboard) {
 	t.Helper()
 	if err := db.Create(s).Error; err != nil {
 		t.Fatalf("create storyboard: %v", err)
-	}
-}
-
-func mustCreateStyle(t *testing.T, db *gorm.DB, s *model.Style) {
-	t.Helper()
-	if err := db.Create(s).Error; err != nil {
-		t.Fatalf("create style: %v", err)
 	}
 }
 

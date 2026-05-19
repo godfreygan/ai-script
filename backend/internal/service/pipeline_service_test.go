@@ -276,7 +276,7 @@ func TestPipelineService_Run_EmptyDAG(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty dag")
 	}
-	if err.Error() != "pipeline.run: pipeline 1 has empty dag" {
+	if err.Error() != "[40920] 流水线 DAG 为空，请先保存节点" {
 		t.Errorf("err=%v", err)
 	}
 }
