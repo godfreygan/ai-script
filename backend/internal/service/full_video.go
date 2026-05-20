@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/godfreygan/ai-script/backend/internal/adapter"
@@ -23,7 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// FullVideoService 是 Sprint4 完整视频域的核心服务。
+// FullVideoService 是完整视频域的核心服务。
 //
 // 负责:
 //   - CRUD 完整视频记录
@@ -504,5 +503,3 @@ func (s *fullVideoService) Render(ctx context.Context, fullID, uid int64) (strin
 	return s.tc.Enqueue(ctx, TaskVideoCompose, payload, asynq.Queue("default"), asynq.MaxRetry(2))
 }
 
-// 防 unused 警告
-var _ = strings.Split

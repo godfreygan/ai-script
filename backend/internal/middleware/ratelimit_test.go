@@ -219,8 +219,8 @@ func TestGlobalRateLimit_ExceedMaxConcurrent(t *testing.T) {
 	s := setupMiniredis(t)
 	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})
 
-	// Set the global counter above maxConcurrent (1000)
-	s.Set("ratelimit:global:concurrent", "1001")
+	// Set the global counter at maxConcurrent so that after INCR it exceeds
+	s.Set("ratelimit:global:concurrent", "3000")
 
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

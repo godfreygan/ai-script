@@ -130,6 +130,7 @@ func RateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 				zap.Int64("uid", uid),
 				zap.String("path", c.Request.URL.Path),
 			)
+			c.Header("Retry-After", strconv.Itoa(windowSec))
 			response.Fail(c, errcode.ErrRateLimit)
 			c.Abort()
 			return
@@ -173,8 +174,8 @@ func clientIP(c *gin.Context) string {
 // 超限返回 HTTP 429。
 func IPRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 	const (
-		ratePerMin = 100
-		burst      = 150
+		ratePerMin = 600
+		burst      = 1000
 		windowSec  = 60
 	)
 
@@ -241,6 +242,7 @@ func IPRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 				zap.String("ip", ip),
 				zap.String("path", c.Request.URL.Path),
 			)
+			c.Header("Retry-After", strconv.Itoa(windowSec))
 			response.Fail(c, errcode.ErrRateLimit.WithMsg("IP 请求过于频繁，请稍后再试"))
 			c.Abort()
 			return
@@ -251,11 +253,11 @@ func IPRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 
 // GlobalRateLimit 全局并发请求数限制中间件。
 // 使用 Redis INCR + EXPIRE 实现滑动窗口计数器，控制最大并发请求数。
-// 默认最大并发: 1000。
+// 默认最大并发: 3000。
 // 超限返回 HTTP 429。
 func GlobalRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 	const (
-		maxConcurrent = 1000
+		maxConcurrent = 3000
 		windowSec     = 60
 	)
 
@@ -310,6 +312,7 @@ func GlobalRateLimit(rdb *redis.Client, log *zap.Logger) gin.HandlerFunc {
 				zap.String("path", c.Request.URL.Path),
 			)
 			_ = releaseScript.Run(redisOpCtx(), rdb, []string{key}).Err()
+			c.Header("Retry-After", strconv.Itoa(windowSec))
 			response.Fail(c, errcode.ErrRateLimit.WithMsg("服务器繁忙，请稍后再试"))
 			c.Abort()
 			return

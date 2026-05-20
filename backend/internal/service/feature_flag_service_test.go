@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// newTestDB 启动一个 in-memory sqlite,AutoMigrate 出 Sprint5 涉及的表。
+// newTestDB 启动一个 in-memory sqlite,AutoMigrate 出相关表。
 // 不直接调用 r.Migrate(), 因为它会拉所有表(有些 model 在 sqlite 下可能报错),只迁需要的那几张。
 // 注意:每个测试都调用 newTestDB,这里用 `:memory:` + SetMaxOpenConns(1) 拿到独占的内存库,
 // 避免 `cache=shared` 多测试共用同一个 DB 时再次 AutoMigrate 同名表触发 sqlite 方言 ALTER 报错。

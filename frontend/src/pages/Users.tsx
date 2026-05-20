@@ -30,6 +30,8 @@ export default function UsersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [form] = Form.useForm();
+  const [formKey, setFormKey] = useState('create');
+  const [formInitialValues, setFormInitialValues] = useState<Record<string, unknown>>({ status: 1 });
 
   const [pwOpen, setPwOpen] = useState(false);
   const [pwSubmitting, setPwSubmitting] = useState(false);
@@ -65,7 +67,8 @@ export default function UsersPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.resetFields();
+    setFormKey(`create-${Date.now()}`);
+    setFormInitialValues({ status: 1 });
     setOpen(true);
   };
 
@@ -73,7 +76,8 @@ export default function UsersPage() {
     try {
       const full = await userApi.get(u.id);
       setEditing(u);
-      form.setFieldsValue({
+      setFormKey(`edit-${u.id}`);
+      setFormInitialValues({
         username: full.username,
         nickname: full.nickname,
         email: full.email,
@@ -86,6 +90,14 @@ export default function UsersPage() {
     } catch (e) {
       message.error((e as Error)?.message || '加载用户详情失败');
     }
+  };
+
+  const handleModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) return;
+    requestAnimationFrame(() => {
+      form.resetFields();
+      form.setFieldsValue(formInitialValues);
+    });
   };
 
   const onSubmit = async () => {
@@ -132,8 +144,14 @@ export default function UsersPage() {
 
   const onResetPw = (u: User) => {
     setPwTarget(u);
-    pwForm.resetFields();
     setPwOpen(true);
+  };
+
+  const handlePwModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) return;
+    requestAnimationFrame(() => {
+      pwForm.resetFields();
+    });
   };
 
   const submitResetPw = async () => {
@@ -238,9 +256,10 @@ export default function UsersPage() {
         onOk={onSubmit}
         confirmLoading={submitting}
         destroyOnClose
+        afterOpenChange={handleModalAfterOpenChange}
         width={600}
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form key={formKey} form={form} layout="vertical" preserve={false}>
           <Form.Item
             name="username"
             label="用户名"
@@ -296,6 +315,7 @@ export default function UsersPage() {
         onOk={submitResetPw}
         confirmLoading={pwSubmitting}
         destroyOnClose
+        afterOpenChange={handlePwModalAfterOpenChange}
       >
         <Form form={pwForm} layout="vertical" preserve={false}>
           <Form.Item

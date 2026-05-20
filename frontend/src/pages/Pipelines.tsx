@@ -646,7 +646,7 @@ export default function PipelinesPage() {
           </Button>
         </Space>
       }
-      bodyStyle={{ padding: 0, height: 'calc(100vh - 220px)' }}
+      styles={{ body: { padding: 0, height: 'calc(100vh - 220px)' } }}
     >
       <Row style={{ height: '100%' }} wrap={false}>
         <Col
@@ -796,6 +796,7 @@ export default function PipelinesPage() {
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
         width={420}
+        forceRender
         destroyOnClose
         footer={
           <Space style={{ float: 'right' }}>
@@ -848,6 +849,7 @@ export default function PipelinesPage() {
         open={createOpen}
         onCancel={() => setCreateOpen(false)}
         onOk={submitCreate}
+        forceRender
         destroyOnClose
       >
         <Form layout="vertical" form={createForm}>
@@ -880,6 +882,7 @@ export default function PipelinesPage() {
         open={addNodeOpen}
         onCancel={() => setAddNodeOpen(false)}
         onOk={submitAddNode}
+        forceRender
         destroyOnClose
       >
         <Form layout="vertical" form={addNodeForm}>
@@ -899,6 +902,7 @@ export default function PipelinesPage() {
         open={runOpen}
         onCancel={() => setRunOpen(false)}
         onOk={submitRun}
+        forceRender
         destroyOnClose
       >
         <Form layout="vertical" form={runForm}>
@@ -917,6 +921,7 @@ export default function PipelinesPage() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         width={860}
+        forceRender
         extra={
           <Button size="small" icon={<ReloadOutlined />} onClick={refreshRuns}>
             刷新

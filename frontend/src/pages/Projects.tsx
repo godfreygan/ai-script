@@ -61,6 +61,8 @@ export default function ProjectsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
   const [form] = Form.useForm();
+  const [formKey, setFormKey] = useState('create');
+  const [formInitialValues, setFormInitialValues] = useState<Record<string, unknown>>({});
 
   const [memberDrawerOpen, setMemberDrawerOpen] = useState(false);
   const [memberTarget, setMemberTarget] = useState<Project | null>(null);
@@ -112,13 +114,15 @@ export default function ProjectsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.resetFields();
+    setFormKey(`create-${Date.now()}`);
+    setFormInitialValues({});
     setOpen(true);
   };
 
   const openEdit = (p: Project) => {
     setEditing(p);
-    form.setFieldsValue({
+    setFormKey(`edit-${p.id}`);
+    setFormInitialValues({
       code: p.code,
       name: p.name,
       description: p.description,
@@ -127,6 +131,14 @@ export default function ProjectsPage() {
       cover_url: p.cover_url,
     });
     setOpen(true);
+  };
+
+  const handleModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) return;
+    requestAnimationFrame(() => {
+      form.resetFields();
+      form.setFieldsValue(formInitialValues);
+    });
   };
 
   const onSubmit = async () => {
@@ -178,7 +190,6 @@ export default function ProjectsPage() {
   const openMemberDrawer = async (p: Project) => {
     setMemberTarget(p);
     setMemberDrawerOpen(true);
-    addMemberForm.resetFields();
     setMemberLoading(true);
     try {
       const data = await projectApi.listMembers(p.id);
@@ -338,9 +349,10 @@ export default function ProjectsPage() {
         onOk={onSubmit}
         confirmLoading={submitting}
         destroyOnClose
+        afterOpenChange={handleModalAfterOpenChange}
         width={620}
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form key={formKey} form={form} layout="vertical" preserve={false}>
           <Form.Item
             name="code"
             label="项目编码"

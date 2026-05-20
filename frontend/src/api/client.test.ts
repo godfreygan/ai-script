@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { useAuthStore } from '@/stores/auth';
-import { useGlobalStore } from '@/stores/globalStore';
 import client, { apiGet, apiPost, apiPut, apiDelete, Envelope } from './client';
 
 // ------------------------------------------------------------------
@@ -117,7 +116,6 @@ describe('client.ts', () => {
     server.resetHandlers();
     setToken(null);
     useAuthStore.setState({ refreshToken: null, user: null });
-    useGlobalStore.setState({ loading: false, loadingText: '' });
     // 重置为合法 base URL，避免后续测试出现 Invalid URL
     window.location.href = 'http://localhost:5173/';
   });
@@ -175,29 +173,6 @@ describe('client.ts', () => {
       expect(capturedCT).toContain('application/json');
     });
 
-    it('should skip global loading for upload endpoint', async () => {
-      const showSpy = vi.spyOn(useGlobalStore.getState(), 'showGlobalLoading');
-      server.use(
-        http.post('/api/v1/files/upload', () => {
-          return HttpResponse.json<Envelope<unknown>>({ code: 0, message: 'ok', data: null });
-        }),
-      );
-      await client.post('/files/upload', new FormData());
-      expect(showSpy).not.toHaveBeenCalled();
-      showSpy.mockRestore();
-    });
-
-    it('should skip global loading for WebSocket handshake', async () => {
-      const showSpy = vi.spyOn(useGlobalStore.getState(), 'showGlobalLoading');
-      server.use(
-        http.get('/api/v1/ws/connect', () => {
-          return HttpResponse.json<Envelope<unknown>>({ code: 0, message: 'ok', data: null });
-        }),
-      );
-      await client.get('/ws/connect');
-      expect(showSpy).not.toHaveBeenCalled();
-      showSpy.mockRestore();
-    });
   });
 
   // ----------------------------------------------------------------

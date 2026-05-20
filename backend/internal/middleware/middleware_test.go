@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -745,5 +744,3 @@ func TestJoinStrings(t *testing.T) {
 	assert.Equal(t, "a, b, c", joinStrings([]string{"a", "b", "c"}, ", "))
 }
 
-// === helper to avoid unused import ===
-var _ = json.Marshal

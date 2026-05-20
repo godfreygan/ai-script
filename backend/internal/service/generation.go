@@ -1269,8 +1269,6 @@ const (
 	DefaultEpisodeCount  = 12
 )
 
-// 防止 time 包未使用警告(在某些子集编译时)
-var _ = time.Now
 
 // getTimeout 从环境变量读取超时秒数,未设置或无效时返回默认值。
 // 配置项通过 .env 中 TIMEOUTS_* 环境变量设置。

@@ -61,6 +61,13 @@ func (ProjectMember) TableName() string { return "project_members" }
 
 // =============== 剧本域 ===============
 
+// Script.Status 剧本状态
+const (
+	ScriptUploaded     int8 = 1 // 已上传
+	ScriptParsed       int8 = 2 // 已解析
+	ScriptEpisodeSplit int8 = 3 // 已分集
+)
+
 type Script struct {
 	Base
 	AuditFields
@@ -189,6 +196,14 @@ func (Image) TableName() string { return "images" }
 
 // =============== 短视频 ===============
 
+// ShortVideo status
+const (
+	ShortVideoQueued    = "queued"
+	ShortVideoRunning   = "running"
+	ShortVideoSucceeded = "succeeded"
+	ShortVideoFailed    = "failed"
+)
+
 type ShortVideo struct {
 	Base
 	ProjectID        int64  `gorm:"index" json:"project_id"`
@@ -216,6 +231,15 @@ func (ShortVideo) TableName() string { return "short_videos" }
 
 // =============== 完整视频 ===============
 
+// FullVideo status
+const (
+	FullVideoDraft   = "draft"
+	FullVideoQueued  = "queued"
+	FullVideoRunning = "running"
+	FullVideoDone    = "done"
+	FullVideoFailed  = "failed"
+)
+
 type FullVideo struct {
 	Base
 	AuditFields
@@ -235,6 +259,14 @@ type FullVideo struct {
 func (FullVideo) TableName() string { return "full_videos" }
 
 // =============== 审核 / 发布 ===============
+
+// ReviewRecord status
+const (
+	ReviewPending   = "pending"
+	ReviewApproved  = "approved"
+	ReviewRejected  = "rejected"
+	ReviewCancelled = "cancelled"
+)
 
 type ReviewFlow struct {
 	Base

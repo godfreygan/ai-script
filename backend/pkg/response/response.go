@@ -7,6 +7,7 @@ import (
 
 	"github.com/godfreygan/ai-script/backend/pkg/errcode"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 type Envelope struct {
@@ -33,7 +34,13 @@ func OK(c *gin.Context, data interface{}) {
 func Fail(c *gin.Context, err error) {
 	var e *errcode.Error
 	if !errors.As(err, &e) {
-		e = errcode.ErrInternal.Wrap(err)
+		// gin binding / validator 错误映射为 400
+		var ve validator.ValidationErrors
+		if errors.As(err, &ve) {
+			e = errcode.ErrParam.WithMsg(ve.Error())
+		} else {
+			e = errcode.ErrInternal.Wrap(err)
+		}
 	}
 	httpCode := mapHTTP(e.Code)
 	// 将业务错误码写入 context,供 metrics 中间件读取

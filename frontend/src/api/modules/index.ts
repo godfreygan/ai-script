@@ -5,6 +5,15 @@ import { useAuthStore } from '@/stores/auth';
 
 // =================== 通用 ===================
 
+/** 通用状态 (0=禁用, 1=启用) */
+export type CommonStatus = 0 | 1;
+
+/** 模型类型 */
+export type ModelType = 'text' | 'image' | 'video' | 'audio';
+
+/** 资源状态 (短/完整视频、审核等) */
+export type ResourceStatus = 'draft' | 'queued' | 'running' | 'succeeded' | 'done' | 'failed' | 'pending' | 'approved' | 'rejected' | 'cancelled';
+
 export interface BaseModel {
   id: number;
   created_at: string;
@@ -269,7 +278,7 @@ export const modelApi = {
     ),
 };
 
-// =================== Sprint 2 - Script / Episode / Prompt ===================
+// =================== Script / Episode / Prompt ===================
 
 export interface Script {
   id: number;
@@ -278,7 +287,7 @@ export interface Script {
   source_url: string;
   raw_text: string;
   current_version: number;
-  status: number; // 0 draft, 1 uploaded, 2 splitting, 3 split, 4 archived
+  status: number; // 1=uploaded, 2=parsed, 3=episode_split
   created_by: number;
   updated_by: number;
   created_at: string;
@@ -347,7 +356,7 @@ export const promptApi = {
     apiPost(`/prompts/${id}/set_current`, { episode_id }),
 };
 
-// =================== Sprint 3 - Storyboard / Style / Image / Short Video / Upload / Invocation ===================
+// =================== Storyboard / Style / Image / Short Video / Upload / Invocation ===================
 
 export interface Storyboard {
   id: number;
@@ -587,7 +596,7 @@ export const invocationApi = {
   }) => apiGet<InvocationStats>('/invocations/stats', params),
 };
 
-// =================== Pipeline (Sprint 4) ===================
+// =================== Pipeline ===================
 
 export interface Pipeline {
   id: number;
@@ -648,7 +657,7 @@ export const pipelineApi = {
   listSteps: (runId: number) => apiGet<StepRun[]>(`/pipeline_runs/${runId}/steps`),
 };
 
-// =================== Full Video (Sprint 4) ===================
+// =================== Full Video ===================
 
 export interface TimelineClip {
   short_video_id?: number;
@@ -696,7 +705,7 @@ export const fullVideoApi = {
   render: (id: number) => apiPost<EnqueueResult>(`/full_videos/${id}/render`),
 };
 
-// =================== Review (Sprint 5) ===================
+// =================== Review ===================
 
 export interface ReviewFlow {
   id: number;
@@ -757,7 +766,7 @@ export const reviewApi = {
   cancel: (id: number) => apiPost(`/review/records/${id}/cancel`),
 };
 
-// =================== Publish (Sprint 5) ===================
+// =================== Publish ===================
 
 export interface PublishItem {
   id: number;
@@ -784,7 +793,7 @@ export const publishApi = {
     apiPut<PublishItem>(`/publishes/${videoId}/watermark`, { watermark_config }),
 };
 
-// =================== Billing (Sprint 5) ===================
+// =================== Billing ===================
 
 export interface BillingQuota {
   id: number;
@@ -825,7 +834,7 @@ export const billingApi = {
     apiGet<BillingDaily[]>('/billing/daily', params),
 };
 
-// =================== Audit (Sprint 5) ===================
+// =================== Audit ===================
 
 export interface AuditEntry {
   id: number;
@@ -846,7 +855,7 @@ export const auditApi = {
     apiGet<Page<AuditEntry>>('/audit_logs', params),
 };
 
-// =================== Feature Flag (Sprint 5) ===================
+// =================== Feature Flag ===================
 
 export interface FeatureFlag {
   id: number;

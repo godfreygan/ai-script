@@ -32,6 +32,8 @@ export default function RolesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<Role | null>(null);
   const [form] = Form.useForm();
+  const [formKey, setFormKey] = useState('create');
+  const [formInitialValues, setFormInitialValues] = useState<Record<string, unknown>>({ data_scope: 'self' });
 
   const fetchAll = async () => {
     setLoading(true);
@@ -63,8 +65,8 @@ export default function RolesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.resetFields();
-    form.setFieldsValue({ data_scope: 'self' });
+    setFormKey(`create-${Date.now()}`);
+    setFormInitialValues({ data_scope: 'self' });
     setOpen(true);
   };
 
@@ -72,7 +74,8 @@ export default function RolesPage() {
     try {
       const full = await roleApi.get(r.id);
       setEditing(r);
-      form.setFieldsValue({
+      setFormKey(`edit-${r.id}`);
+      setFormInitialValues({
         code: full.code,
         name: full.name,
         description: full.description,
@@ -84,6 +87,14 @@ export default function RolesPage() {
     } catch (e) {
       message.error((e as Error)?.message || '加载角色详情失败');
     }
+  };
+
+  const handleModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) return;
+    requestAnimationFrame(() => {
+      form.resetFields();
+      form.setFieldsValue(formInitialValues);
+    });
   };
 
   const onSubmit = async () => {
@@ -196,8 +207,9 @@ export default function RolesPage() {
         onOk={onSubmit}
         confirmLoading={submitting}
         destroyOnClose
+        afterOpenChange={handleModalAfterOpenChange}
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form key={formKey} form={form} layout="vertical" preserve={false}>
           <Form.Item
             name="code"
             label="编码"

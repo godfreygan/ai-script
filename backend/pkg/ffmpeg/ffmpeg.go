@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // Binary 默认使用 PATH 中的 ffmpeg。可通过 SetBinary 指定绝对路径。
@@ -300,5 +299,3 @@ func Available() bool {
 	return true
 }
 
-// 通过 ms 计算的 ffmpeg 内部秒数;保持 time 引用,避免 unused 包警告
-var _ = time.Second

@@ -111,6 +111,8 @@ export default function ReviewsPage() {
     note?: string;
   }>();
   const [submitting, setSubmitting] = useState(false);
+  const [submitFormKey, setSubmitFormKey] = useState('submit');
+  const [submitFormInitialValues, setSubmitFormInitialValues] = useState<Record<string, unknown>>({ target_type: 'full_video' });
 
   // ---------------- 拉数据 ----------------
   const fetchRecords = async () => {
@@ -275,9 +277,17 @@ export default function ReviewsPage() {
 
   // ---------------- 提交审核 ----------------
   const openSubmit = () => {
-    submitForm.resetFields();
-    submitForm.setFieldsValue({ target_type: 'full_video' });
+    setSubmitFormKey(`submit-${Date.now()}`);
+    setSubmitFormInitialValues({ target_type: 'full_video' });
     setSubmitOpen(true);
+  };
+
+  const handleSubmitModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) return;
+    requestAnimationFrame(() => {
+      submitForm.resetFields();
+      submitForm.setFieldsValue(submitFormInitialValues);
+    });
   };
 
   const onSubmit = async () => {
@@ -696,8 +706,9 @@ export default function ReviewsPage() {
         okText="提交"
         cancelText="取消"
         destroyOnClose
+        afterOpenChange={handleSubmitModalAfterOpenChange}
       >
-        <Form form={submitForm} layout="vertical">
+        <Form key={submitFormKey} form={submitForm} layout="vertical">
           <Form.Item
             name="target_type"
             label="目标类型"

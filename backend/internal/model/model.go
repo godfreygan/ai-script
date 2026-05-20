@@ -6,6 +6,27 @@ import (
 	"gorm.io/gorm"
 )
 
+// 通用状态枚举
+const (
+	StatusDisabled int8 = 0
+	StatusEnabled  int8 = 1
+)
+
+// 用户状态
+const (
+	UserDisabled int8 = 0
+	UserActive   int8 = 1
+	UserLocked   int8 = 2
+)
+
+// 模型类型
+const (
+	ModelTypeText  = "text"
+	ModelTypeImage = "image"
+	ModelTypeVideo = "video"
+	ModelTypeAudio = "audio"
+)
+
 // Base 通用字段
 type Base struct {
 	ID        int64          `gorm:"primaryKey" json:"id"`
@@ -146,5 +167,5 @@ type StepRun struct {
 
 func (StepRun) TableName() string { return "step_runs" }
 
-// 其他实体(Script/Episode/Prompt/Storyboard/Style/Image/ShortVideo/FullVideo/Review*/Publish/Quota/Invocation/Daily)
-// 见 docs/database-design.md;同样模式,这里省略以控制单文件大小,实际开发时按需补全。
+// 其他实体见 extra.go: Script, Episode, EpisodePrompt, Storyboard, Style, Image,
+// ShortVideo, FullVideo, Review*, Publish, ModelPricing, ModelInvocation, Billing*, AuditLog, SysDict.

@@ -51,6 +51,8 @@ export default function DeptsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<Department | null>(null);
   const [form] = Form.useForm();
+  const [formKey, setFormKey] = useState('create');
+  const [formInitialValues, setFormInitialValues] = useState<Record<string, unknown>>({ sort: 0 });
 
   const fetchList = async () => {
     setLoading(true);
@@ -74,23 +76,31 @@ export default function DeptsPage() {
 
   const openCreate = (parent?: Department) => {
     setEditing(null);
-    form.resetFields();
-    if (parent) {
-      form.setFieldsValue({ parent_id: parent.id });
-    }
-    form.setFieldsValue({ sort: 0 });
+    setFormKey(`create-${Date.now()}`);
+    const vals: Record<string, unknown> = { sort: 0 };
+    if (parent) vals.parent_id = parent.id;
+    setFormInitialValues(vals);
     setOpen(true);
   };
 
   const openEdit = (d: Department) => {
     setEditing(d);
-    form.setFieldsValue({
+    setFormKey(`edit-${d.id}`);
+    setFormInitialValues({
       name: d.name,
       parent_id: d.parent_id || undefined,
       sort: d.sort,
       status: d.status,
     });
     setOpen(true);
+  };
+
+  const handleModalAfterOpenChange = (visible: boolean) => {
+    if (!visible) return;
+    requestAnimationFrame(() => {
+      form.resetFields();
+      form.setFieldsValue(formInitialValues);
+    });
   };
 
   const onSubmit = async () => {
@@ -199,9 +209,10 @@ export default function DeptsPage() {
         onOk={onSubmit}
         confirmLoading={submitting}
         destroyOnClose
+        afterOpenChange={handleModalAfterOpenChange}
         width={520}
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form key={formKey} form={form} layout="vertical" preserve={false}>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input />
           </Form.Item>
