@@ -142,6 +142,14 @@ func (r *PublishRepo) Upsert(ctx context.Context, p *model.Publish) error {
 	})
 }
 
+func (r *PublishRepo) GetByID(ctx context.Context, id int64) (*model.Publish, error) {
+	var p model.Publish
+	if err := r.db.WithContext(ctx).First(&p, id).Error; err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func (r *PublishRepo) GetByVideoID(ctx context.Context, videoID int64) (*model.Publish, error) {
 	var p model.Publish
 	if err := r.db.WithContext(ctx).Where("full_video_id = ?", videoID).First(&p).Error; err != nil {

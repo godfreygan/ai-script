@@ -263,38 +263,101 @@ func seedCasbinRules(db *gorm.DB) error {
 
 func seedReviewFlow(db *gorm.DB) error {
 	const flowName = "default-single-step-review"
-	var flow model.ReviewFlow
-	err := db.Where("name = ?", flowName).First(&flow).Error
-	if err == gorm.ErrRecordNotFound {
-		flow = model.ReviewFlow{
-			Name:        flowName,
-			Description: "single step review flow for admin",
-			TargetType:   "full_video",
-			Enabled:      1,
-			IsDefault:    1,
-		}
-		if err := db.Create(&flow).Error; err != nil {
+	const flowDescription = "single step review flow for admin"
+	const targetType = "full_video"
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		var flows []model.ReviewFlow
+		if err := tx.Where("target_type = ?", targetType).Order("id ASC").Find(&flows).Error; err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
-	}
 
-	var node model.ReviewNode
-	err = db.Where("flow_id = ? AND step_no = ?", flow.ID, 1).First(&node).Error
-	if err == gorm.ErrRecordNotFound {
-		node = model.ReviewNode{
-			FlowID:           flow.ID,
-			StepNo:           1,
-			Name:             "admin approval",
-			ApproverType:     "role",
-			ApproverValue:    "super_admin",
-			AllowTimeoutPass: 1,
-			TimeoutHours:     24,
+		var canonicalID int64
+		for _, flow := range flows {
+			if flow.Name == flowName {
+				canonicalID = flow.ID
+				break
+			}
 		}
-		return db.Create(&node).Error
-	}
-	return err
+		if canonicalID == 0 {
+			if len(flows) > 0 {
+				canonicalID = flows[0].ID
+			} else {
+				flow := model.ReviewFlow{
+					Name:        flowName,
+					Description: flowDescription,
+					TargetType:  targetType,
+					Enabled:     1,
+					IsDefault:   1,
+				}
+				if err := tx.Create(&flow).Error; err != nil {
+					return err
+				}
+				canonicalID = flow.ID
+			}
+		}
+
+		if err := tx.Model(&model.ReviewFlow{}).
+			Where("id = ?", canonicalID).
+			Updates(map[string]any{
+				"name":        flowName,
+				"description": flowDescription,
+				"target_type": targetType,
+				"enabled":     1,
+				"is_default":  1,
+			}).Error; err != nil {
+			return err
+		}
+
+		var nodes []model.ReviewNode
+		if err := tx.Where("flow_id = ?", canonicalID).Order("step_no ASC, id ASC").Find(&nodes).Error; err != nil {
+			return err
+		}
+		if len(nodes) == 0 {
+			node := model.ReviewNode{
+				FlowID:           canonicalID,
+				StepNo:           1,
+				Name:             "admin approval",
+				ApproverType:     "role",
+				ApproverValue:    "super_admin",
+				AllowTimeoutPass: 1,
+				TimeoutHours:     24,
+			}
+			return tx.Create(&node).Error
+		}
+
+		primaryNode := nodes[0]
+		if err := tx.Model(&model.ReviewNode{}).
+			Where("id = ?", primaryNode.ID).
+			Updates(map[string]any{
+				"step_no":            1,
+				"name":               "admin approval",
+				"approver_type":      "role",
+				"approver_value":     "super_admin",
+				"allow_timeout_pass": 1,
+				"timeout_hours":      24,
+			}).Error; err != nil {
+			return err
+		}
+
+		if len(nodes) > 1 {
+			extraNodeIDs := make([]int64, 0, len(nodes)-1)
+			for _, node := range nodes[1:] {
+				extraNodeIDs = append(extraNodeIDs, node.ID)
+			}
+			if err := tx.Where("id IN ?", extraNodeIDs).Delete(&model.ReviewNode{}).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Where("flow_id = ? AND id <> ?", canonicalID, primaryNode.ID).Delete(&model.ReviewNode{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("target_type = ? AND id <> ?", targetType, canonicalID).Delete(&model.ReviewFlow{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func seedBillingQuota(db *gorm.DB, adminUserID int64) error {

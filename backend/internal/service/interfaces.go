@@ -127,7 +127,7 @@ type PromptService interface {
 type PublishService interface {
 	Publish(ctx context.Context, in *PublishInput, uid int64) (*model.Publish, error)
 	Unpublish(ctx context.Context, videoID int64) error
-	Get(ctx context.Context, videoID int64) (*model.Publish, error)
+	Get(ctx context.Context, publishID int64) (*model.Publish, error)
 	List(ctx context.Context, status string, page, size int) ([]model.Publish, int64, error)
 	IncPlay(ctx context.Context, videoID int64) error
 	IncDownload(ctx context.Context, videoID int64) error

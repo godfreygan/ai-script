@@ -37,7 +37,13 @@ func (h *PublishHandler) Unpublish(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	if err := h.publish.Unpublish(c.Request.Context(), id); err != nil {
+	// 通过 publish id 查询对应的 full_video_id
+	p, err := h.publish.Get(c.Request.Context(), id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if err := h.publish.Unpublish(c.Request.Context(), p.FullVideoID); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -84,7 +90,13 @@ func (h *PublishHandler) IncPlay(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	if err := h.publish.IncPlay(c.Request.Context(), id); err != nil {
+	// 通过 publish id 查询对应的 full_video_id
+	p, err := h.publish.Get(c.Request.Context(), id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if err := h.publish.IncPlay(c.Request.Context(), p.FullVideoID); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -97,7 +109,13 @@ func (h *PublishHandler) IncDownload(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	if err := h.publish.IncDownload(c.Request.Context(), id); err != nil {
+	// 通过 publish id 查询对应的 full_video_id
+	p, err := h.publish.Get(c.Request.Context(), id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if err := h.publish.IncDownload(c.Request.Context(), p.FullVideoID); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -110,6 +128,12 @@ func (h *PublishHandler) UpdateWatermark(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
+	// 通过 publish id 查询对应的 full_video_id
+	p, err := h.publish.Get(c.Request.Context(), id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
 	var body struct {
 		WatermarkConfig json.RawMessage `json:"watermark_config"`
 	}
@@ -117,10 +141,10 @@ func (h *PublishHandler) UpdateWatermark(c *gin.Context) {
 		response.Fail(c, errcode.ErrParam.Wrap(err))
 		return
 	}
-	p, err := h.publish.UpdateWatermark(c.Request.Context(), id, body.WatermarkConfig)
+	up, err := h.publish.UpdateWatermark(c.Request.Context(), p.FullVideoID, body.WatermarkConfig)
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, p)
+	response.OK(c, up)
 }

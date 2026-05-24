@@ -141,7 +141,14 @@
       "Bash(./ai-script.exe)",
       "Bash(echo \"Started backend PID: $!\")",
       "Bash(pnpm view *)",
-      "Bash(pnpm install *)"
+      "Bash(pnpm install *)",
+      "Bash(mysql -h 127.0.0.1 -P 3306 -u aiscript -p123456 -e \"SELECT 1;\")",
+      "Bash(redis-cli -h 127.0.0.1 -p 6379 -a 123456 ping)",
+      "Bash(redis-cli -h 127.0.0.1 -p 6379 ping)",
+      "Bash(cat *)",
+      "Bash(kill 6970)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(ps -W)"
     ]
   }
 }

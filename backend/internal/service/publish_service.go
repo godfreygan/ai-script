@@ -110,8 +110,8 @@ func (s *publishService) Unpublish(ctx context.Context, videoID int64) error {
 }
 
 // Get 查询某 FullVideoID 的发布记录;不存在时返回 ErrNotFound。
-func (s *publishService) Get(ctx context.Context, videoID int64) (*model.Publish, error) {
-	p, err := s.r.Publish.GetByVideoID(ctx, videoID)
+func (s *publishService) Get(ctx context.Context, publishID int64) (*model.Publish, error) {
+	p, err := s.r.Publish.GetByID(ctx, publishID)
 	if err != nil || p == nil {
 		return nil, errcode.ErrNotFound
 	}

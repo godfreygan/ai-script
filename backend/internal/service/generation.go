@@ -682,7 +682,7 @@ type imageService struct {
 }
 
 type ImageGenInput struct {
-	StoryboardID int64          `json:"storyboard_id" binding:"required,gte=1"`
+	StoryboardID int64          `json:"storyboard_id" binding:"omitempty,gte=1"`
 	ProjectID    int64          `json:"project_id" binding:"required,gte=1"`
 	StyleID      int64          `json:"style_id" binding:"omitempty,gte=1"`
 	ModelID      int64          `json:"model_id" binding:"required,gte=1"`
@@ -914,7 +914,7 @@ type shortVideoService struct {
 }
 
 type ShortVideoGenInput struct {
-	StoryboardID   int64          `json:"storyboard_id" binding:"required,gte=1"`
+	StoryboardID   int64          `json:"storyboard_id" binding:"omitempty,gte=1"`
 	ProjectID      int64          `json:"project_id" binding:"required,gte=1"`
 	SourceImageIDs []int64        `json:"source_image_ids"`
 	Prompt         string         `json:"prompt" binding:"omitempty,min=1,max=2000"`
