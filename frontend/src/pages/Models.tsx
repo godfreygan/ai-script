@@ -263,8 +263,16 @@ export default function ModelsPage() {
       }
       await fetchList();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '探活请求失败';
-      message.error(msg);
+      // 区分网络错误和业务错误
+      if (e instanceof Error) {
+        if (e.message.includes('登录已过期') || e.message.includes('未登录')) {
+          message.error('登录已过期，请重新登录');
+        } else {
+          message.error(`探活失败: ${e.message}`);
+        }
+      } else {
+        message.error('探活请求失败');
+      }
     } finally {
       setHealthcheckingId(null);
     }

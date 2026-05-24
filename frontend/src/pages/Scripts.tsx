@@ -4,6 +4,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Divider,
   Drawer,
   Empty,
   Form,
@@ -18,6 +19,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Upload,
 } from 'antd';
 import {
   DeleteOutlined,
@@ -25,7 +27,9 @@ import {
   PlusOutlined,
   ScissorOutlined,
   ThunderboltOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
+import type { UploadFile } from 'antd/es/upload/interface';
 import { useNavigate } from 'react-router-dom';
 import {
   Episode,
@@ -63,6 +67,8 @@ export default function ScriptsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitTarget, setSplitTarget] = useState<Script | null>(null);
@@ -154,10 +160,39 @@ export default function ScriptsPage() {
       message.success('剧本已上传');
       setCreateOpen(false);
       createForm.resetFields();
+      setFileList([]);
       fetchList();
     } catch (err) {
       message.error((err as Error)?.message || '创建失败');
     }
+  };
+
+  // 读取上传的文件内容
+  const handleFileRead = async (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const supportedExts = ['txt', 'md', 'json', 'csv'];
+
+    if (!supportedExts.includes(ext || '')) {
+      message.error('仅支持 txt、md、json、csv 格式的文本文件');
+      return false;
+    }
+
+    setUploading(true);
+    try {
+      const text = await file.text();
+      createForm.setFieldsValue({ raw_text: text });
+      // 如果名称为空，用文件名填充
+      if (!createForm.getFieldValue('name')) {
+        const nameWithoutExt = file.name.replace(/\.[^.]+$/, '');
+        createForm.setFieldsValue({ name: nameWithoutExt });
+      }
+      message.success(`已导入 ${file.name}`);
+    } catch {
+      message.error('读取文件失败');
+    } finally {
+      setUploading(false);
+    }
+    return false; // 阻止 antd 默认上传
   };
 
   const onDelete = async (id: number) => {
@@ -354,7 +389,10 @@ export default function ScriptsPage() {
       <Modal
         open={createOpen}
         title="新建剧本"
-        onCancel={() => setCreateOpen(false)}
+        onCancel={() => {
+          setCreateOpen(false);
+          setFileList([]);
+        }}
         onOk={onCreate}
         width={680}
         destroyOnClose
@@ -373,6 +411,23 @@ export default function ScriptsPage() {
           <Form.Item name="source_url" label="来源链接(可选)">
             <Input placeholder="https://..." />
           </Form.Item>
+          <Form.Item label="从文件导入">
+            <Upload
+              accept=".txt,.md,.json,.csv,.doc,.docx"
+              fileList={fileList}
+              beforeUpload={handleFileRead}
+              onChange={({ fileList: newFileList }) => setFileList(newFileList)}
+              maxCount={1}
+            >
+              <Button icon={<UploadOutlined />} loading={uploading}>
+                选择文件 (txt、md、json、csv、doc、docx)
+              </Button>
+            </Upload>
+            <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
+              支持 txt、md、json、csv、doc、docx 格式，文件内容将自动填入下方文本框
+            </Typography.Text>
+          </Form.Item>
+          <Divider style={{ margin: '12px 0' }} />
           <Form.Item name="raw_text" label="剧本原文" rules={[{ required: true, min: 100 }]}>
             <Input.TextArea rows={12} placeholder="粘贴完整剧本(>= 100 字)" />
           </Form.Item>

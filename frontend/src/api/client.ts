@@ -147,19 +147,26 @@ client.interceptors.response.use(
       isEnvelope(payload) ? payload : undefined,
     );
 
+    // 仅在 401 时尝试刷新 token，其他错误直接返回
     if (status === 401) {
-      if (!_refreshPromise) {
+      // 如果正在刷新中，等待刷新结果
+      if (_refreshPromise) {
+        const refreshed = await _refreshPromise;
+        if (refreshed && err.config) {
+          return client.request(err.config);
+        }
+      } else {
+        // 发起刷新
         _refreshPromise = tryRefreshToken().finally(() => {
           _refreshPromise = null;
         });
+        const refreshed = await _refreshPromise;
+        if (refreshed && err.config) {
+          return client.request(err.config);
+        }
       }
-      const refreshed = await _refreshPromise;
-      if (refreshed && err.config) {
-        // token 刷新成功,重试原请求
-        return client.request(err.config);
-      }
-      // refresh 失败:延迟跳转,给并发请求一个排队等待 refresh 的窗口
-      safeToast('error', '登录已过期,请重新登录');
+      // refresh 失败: 延迟跳转，给并发请求一个排队等待 refresh 的窗口
+      safeToast('error', '登录已过期，请重新登录');
       setTimeout(() => {
         useAuthStore.getState().logout();
         window.location.href = '/login';
@@ -173,6 +180,7 @@ client.interceptors.response.use(
       );
     }
 
+    // 非 401 错误不触发 logout，仅显示 toast
     if (!skipToast) {
       safeToast('error', displayMessage);
     }

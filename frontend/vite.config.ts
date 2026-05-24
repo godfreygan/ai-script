@@ -26,6 +26,14 @@ export default defineConfig(({ mode }) => {
           ws: true,
           changeOrigin: true,
         },
+        '/healthz': {
+          target: env.VITE_API_BASE || 'http://localhost:8080',
+          changeOrigin: true,
+        },
+        '/metrics': {
+          target: env.VITE_API_BASE || 'http://localhost:8080',
+          changeOrigin: true,
+        },
       },
     },
     build: {

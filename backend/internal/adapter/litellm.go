@@ -409,9 +409,43 @@ func (a *LiteLLMAdapter) doJSON(ctx context.Context, path string, body any) ([]b
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("upstream HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 512))
+		return nil, a.formatHTTPError(resp.StatusCode, string(respBody))
 	}
 	return respBody, nil
+}
+
+// formatHTTPError 根据 HTTP 状态码生成用户友好的错误信息
+func (a *LiteLLMAdapter) formatHTTPError(statusCode int, body string) error {
+	// 尝试解析上游返回的 JSON 错误
+	var errResp struct {
+		Error *struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(body), &errResp) == nil && errResp.Error != nil {
+		return fmt.Errorf("upstream: %s", errResp.Error.Message)
+	}
+
+	// 根据状态码提供友好提示
+	switch statusCode {
+	case http.StatusNotFound: // 404
+		return fmt.Errorf("模型接口不存在 (404): 请检查模型网关地址 %s 是否正确", a.baseURL)
+	case http.StatusUnauthorized: // 401
+		return fmt.Errorf("模型认证失败 (401): 请检查 API Key 配置")
+	case http.StatusForbidden: // 403
+		return fmt.Errorf("模型访问被拒绝 (403): 请检查 API Key 权限")
+	case http.StatusTooManyRequests: // 429
+		return fmt.Errorf("模型请求过于频繁 (429): 请稍后重试")
+	case http.StatusInternalServerError: // 500
+		return fmt.Errorf("模型服务内部错误 (500): %s", truncate(body, 200))
+	case http.StatusBadGateway: // 502
+		return fmt.Errorf("模型网关错误 (502): 上游服务不可达")
+	case http.StatusServiceUnavailable: // 503
+		return fmt.Errorf("模型服务不可用 (503): 请稍后重试")
+	default:
+		return fmt.Errorf("upstream HTTP %d: %s", statusCode, truncate(body, 512))
+	}
 }
 
 // fullURL 拼接调用 URL — 如果 baseURL 已含 /v1,直接拼;否则补一个 /v1

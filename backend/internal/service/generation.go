@@ -228,7 +228,7 @@ func (s *scriptService) HandleSplitTask(modelSvc ModelService) asynq.HandlerFunc
 		ad, m, err := modelSvc.GetAdapter(ctx, p.ModelID)
 		if err != nil {
 			s.log.Error("model adapter unavailable", zap.Int64("script_id", p.ScriptID), zap.Int64("model_id", p.ModelID), zap.Error(err))
-			markFailed("模型不可用")
+			markFailed("模型不可用: " + err.Error())
 			return err
 		}
 		if ad.Type() != adapter.TypeText {
@@ -256,7 +256,7 @@ func (s *scriptService) HandleSplitTask(modelSvc ModelService) asynq.HandlerFunc
 		resp, err := ad.Generate(ctx, req)
 		if err != nil {
 			s.log.Error("LLM call failed", zap.Int64("script_id", p.ScriptID), zap.Int64("model_id", p.ModelID), zap.Error(err))
-			markFailed("模型调用失败")
+			markFailed("模型调用失败: " + err.Error())
 			return err
 		}
 		if len(resp.Texts) == 0 {

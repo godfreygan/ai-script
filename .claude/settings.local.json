@@ -148,7 +148,13 @@
       "Bash(cat *)",
       "Bash(kill 6970)",
       "Bash(echo \"exit=$?\")",
-      "Bash(ps -W)"
+      "Bash(ps -W)",
+      "Bash(crontab -l)",
+      "Bash(find /Users/godfrey/data/go/src/godfreygan/ai-script -name *clean* -o -name *cache* -o -name *disk*)",
+      "Bash(system_profiler SPStorageDataType)",
+      "Bash(chmod:*)",
+      "Bash(echo \"0 * * * * ~/clean_cache.sh >> /tmp/clean_cache.log 2>&1\")",
+      "Bash(crontab -)"
     ]
   }
 }
